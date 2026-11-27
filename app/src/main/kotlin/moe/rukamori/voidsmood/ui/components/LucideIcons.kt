@@ -178,3 +178,74 @@ fun LucideSettings(
         drawCircle(tint, radius = w * 0.38f, center = Offset(w * 0.5f, h * 0.5f), style = Stroke(stroke))
     }
 }
+
+// BARU: Ikon Vektor Lucide Search untuk pencarian video YouTube
+@Composable
+fun LucideSearch(
+    modifier: Modifier = Modifier,
+    tint: Color = Color.White,
+    size: Dp = 24.dp,
+    strokeWidth: Dp = 2.dp
+) {
+    Canvas(modifier = modifier.size(size)) {
+        val w = this.size.width
+        val h = this.size.height
+        val stroke = strokeWidth.toPx()
+
+        // Magnifying glass lens
+        drawCircle(
+            color = tint,
+            radius = w * 0.28f,
+            center = Offset(w * 0.42f, h * 0.42f),
+            style = Stroke(stroke)
+        )
+        // Handle
+        drawLine(
+            color = tint,
+            start = Offset(w * 0.62f, h * 0.62f),
+            end = Offset(w * 0.85f, h * 0.85f),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round
+        )
+    }
+}
+
+// BARU: Ikon Vektor Lucide Refresh untuk reload feed YouTube
+@Composable
+fun LucideRefresh(
+    modifier: Modifier = Modifier,
+    tint: Color = Color.White,
+    size: Dp = 24.dp,
+    strokeWidth: Dp = 2.dp
+) {
+    Canvas(modifier = modifier.size(size)) {
+        val w = this.size.width
+        val h = this.size.height
+        val stroke = strokeWidth.toPx()
+
+        drawArc(
+            color = tint,
+            startAngle = 45f,
+            sweepAngle = 270f,
+            useCenter = false,
+            topLeft = Offset(w * 0.15f, h * 0.15f),
+            size = androidx.compose.ui.geometry.Size(w * 0.7f, h * 0.7f),
+            style = Stroke(stroke, cap = StrokeCap.Round)
+        )
+        // Arrow head
+        drawLine(
+            color = tint,
+            start = Offset(w * 0.85f, h * 0.4f),
+            end = Offset(w * 0.85f, h * 0.18f),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = tint,
+            start = Offset(w * 0.85f, h * 0.18f),
+            end = Offset(w * 0.63f, h * 0.18f),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round
+        )
+    }
+}

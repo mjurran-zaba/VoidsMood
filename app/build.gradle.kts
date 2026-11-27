@@ -139,4 +139,17 @@ dependencies {
     // implementation(libs.coroutines)
     // BARU: Gunakan libs.coroutines.core untuk dependensi kotlinx-coroutines
     implementation(libs.coroutines.core)
+
+    // BARU: Harta Karun NewPipeExtractor, OkHttp3, dan Mesin JS Rhino
+    implementation(libs.newpipe.extractor)
+    implementation(libs.okhttp)
+    implementation(libs.rhino)
+
+    // BARU: Coil 3 untuk Pemuatan Gambar Asinkron yang Hemat RAM
+    implementation(libs.coil)
+    implementation(libs.coil.network.okhttp)
+
+    // BARU: Media3 ExoPlayer Core untuk Pemutaran Video & Audio
+    implementation(libs.media3)
+    implementation(libs.media3.okhttp)
 }

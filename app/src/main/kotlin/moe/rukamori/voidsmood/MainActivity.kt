@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -24,8 +25,12 @@ import moe.rukamori.voidsmood.ui.components.VoidsTopAppBar
 import moe.rukamori.voidsmood.ui.drawer.VoidsDrawerContent
 import moe.rukamori.voidsmood.ui.screens.HomeScreen
 import moe.rukamori.voidsmood.ui.theme.VoidsMoodTheme
+import moe.rukamori.voidsmood.ui.viewmodel.HomeViewModel
 
 class MainActivity : ComponentActivity() {
+
+    private val homeViewModel: HomeViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -44,6 +49,9 @@ class MainActivity : ComponentActivity() {
                             selectedId = currentNavId,
                             onItemSelected = { id ->
                                 currentNavId = id
+                                if (id == "home") {
+                                    homeViewModel.loadTrending()
+                                }
                                 scope.launch { drawerState.close() }
                             }
                         )
@@ -58,6 +66,9 @@ class MainActivity : ComponentActivity() {
                                     scope.launch {
                                         if (drawerState.isClosed) drawerState.open() else drawerState.close()
                                     }
+                                },
+                                onSearch = { query ->
+                                    homeViewModel.search(query)
                                 }
                             )
                         }
@@ -67,7 +78,12 @@ class MainActivity : ComponentActivity() {
                                 .fillMaxSize()
                                 .padding(innerPadding)
                         ) {
-                            HomeScreen()
+                            HomeScreen(
+                                viewModel = homeViewModel,
+                                onVideoClick = { video ->
+                                    // Klik kartu video (siap disambungkan ke Player Media3 di fase berikutnya)
+                                }
+                            )
                         }
                     }
                 }

@@ -1,147 +1,298 @@
 // meticulous and honest
 package moe.rukamori.voidsmood.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import moe.rukamori.voidsmood.R
+import moe.rukamori.voidsmood.data.model.VideoItem
 import moe.rukamori.voidsmood.ui.components.GlassmorphicCard
+import moe.rukamori.voidsmood.ui.components.LucideRefresh
+import moe.rukamori.voidsmood.ui.components.VideoCard
 import moe.rukamori.voidsmood.ui.theme.DarkBlueOceanAura
 import moe.rukamori.voidsmood.ui.theme.FadedGreyCharcoalAura
+import moe.rukamori.voidsmood.ui.theme.GlassBorder
 import moe.rukamori.voidsmood.ui.theme.GlassBorderHighlight
+import moe.rukamori.voidsmood.ui.theme.GlassSurface
 import moe.rukamori.voidsmood.ui.theme.IceWhite
 import moe.rukamori.voidsmood.ui.theme.PolarCyan
 import moe.rukamori.voidsmood.ui.theme.TextMuted
+import moe.rukamori.voidsmood.ui.viewmodel.HomeUiState
+import moe.rukamori.voidsmood.ui.viewmodel.HomeViewModel
 
 @Composable
 fun HomeScreen(
+    viewModel: HomeViewModel,
+    onVideoClick: (VideoItem) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val uiState by viewModel.uiState.collectAsState()
+
     Box(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = 20.dp),
-        contentAlignment = Alignment.Center
+        modifier = modifier.fillMaxSize()
     ) {
-        // Minimalist House Monolith Card (Polosan Clean Foundation)
-        GlassmorphicCard(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 32.dp),
-            shape = RoundedCornerShape(24.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 36.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                // Aura Monolith Symbol
-                Box(
-                    modifier = Modifier
-                        .size(64.dp)
-                        .clip(CircleShape)
-                        .background(
-                            Brush.radialGradient(
-                                colors = listOf(
-                                    PolarCyan.copy(alpha = 0.40f),
-                                    DarkBlueOceanAura,
-                                    Color.Transparent
-                                ),
-                                center = Offset(32f, 32f),
-                                radius = 64f
-                            )
-                        )
-                        .border(1.dp, GlassBorderHighlight, CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(18.dp)
-                            .clip(CircleShape)
-                            .background(PolarCyan)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                Text(
-                    text = stringResource(R.string.house_ready_title),
-                    color = IceWhite,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.5.sp
+        when (val state = uiState) {
+            is HomeUiState.Loading -> {
+                LoadingFeedView()
+            }
+            is HomeUiState.Error -> {
+                ErrorFeedView(
+                    message = state.message,
+                    onRetry = { viewModel.loadTrending() }
                 )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Text(
-                    text = stringResource(R.string.house_ready_desc),
-                    color = TextMuted,
-                    fontSize = 14.sp,
-                    lineHeight = 21.sp,
-                    textAlign = TextAlign.Center
+            }
+            is HomeUiState.Success -> {
+                SuccessFeedView(
+                    videos = state.videos,
+                    isSearching = state.isSearching,
+                    query = state.query,
+                    onVideoClick = onVideoClick,
+                    onRefresh = { viewModel.loadTrending() }
                 )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Feature Pill Badges
-                RowBadges()
             }
         }
     }
 }
 
 @Composable
-private fun RowBadges() {
-    androidx.compose.foundation.layout.Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
+private fun SuccessFeedView(
+    videos: List<VideoItem>,
+    isSearching: Boolean,
+    query: String,
+    onVideoClick: (VideoItem) -> Unit,
+    onRefresh: () -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        BadgePill(label = "Glassmorphism 35%")
-        BadgePill(label = "Auramorphism")
-        BadgePill(label = "ARMv7 Ready")
+        item {
+            // Header Bar with Section Label
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(PolarCyan)
+                    )
+                    Text(
+                        text = if (isSearching) "Hasil Pencarian: \"$query\"" else "Sedang Tren di YouTube",
+                        color = IceWhite,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(FadedGreyCharcoalAura.copy(alpha = 0.45f))
+                        .clickable(onClick = onRefresh),
+                    contentAlignment = Alignment.Center
+                ) {
+                    LucideRefresh(
+                        tint = PolarCyan,
+                        size = 18.dp
+                    )
+                }
+            }
+        }
+
+        if (videos.isEmpty()) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 64.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Tidak ada video ditemukan.",
+                        color = TextMuted,
+                        fontSize = 14.sp
+                    )
+                }
+            }
+        } else {
+            items(
+                items = videos,
+                key = { it.id }
+            ) { video ->
+                VideoCard(
+                    video = video,
+                    onVideoClick = onVideoClick
+                )
+            }
+        }
+
+        // Bottom Spacer for Navigation Bar clearance
+        item {
+            Spacer(modifier = Modifier.height(72.dp))
+        }
     }
 }
 
 @Composable
-private fun BadgePill(label: String) {
+private fun LoadingFeedView() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Skeleton shimmer placeholder cards
+        repeat(3) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(GlassSurface)
+                    .border(1.dp, GlassBorder, RoundedCornerShape(18.dp))
+            ) {
+                Column {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(16f / 9f)
+                            .background(Color(0xFF13141C))
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF1C1D28))
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(0.85f)
+                                    .height(14.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(Color(0xFF1C1D28))
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(0.45f)
+                                    .height(12.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(Color(0xFF1C1D28))
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ErrorFeedView(
+    message: String,
+    onRetry: () -> Unit
+) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(FadedGreyCharcoalAura.copy(alpha = 0.45f))
-            .border(1.dp, GlassBorderHighlight.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
-            .padding(horizontal = 10.dp, vertical = 6.dp)
+            .fillMaxSize()
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = label,
-            color = PolarCyan.copy(alpha = 0.85f),
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium
-        )
+        GlassmorphicCard(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = "Gagal Menghubungkan ke YouTube",
+                    color = IceWhite,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = message,
+                    color = TextMuted,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(PolarCyan)
+                        .clickable(onClick = onRetry)
+                        .padding(horizontal = 20.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        text = "Coba Lagi",
+                        color = Color.Black,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
     }
 }

@@ -16,17 +16,27 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import moe.rukamori.voidsmood.ui.theme.FadedGreyCharcoalAura
 import moe.rukamori.voidsmood.ui.theme.GlassBorderSubtle
 import moe.rukamori.voidsmood.ui.theme.GlassSurface35
 import moe.rukamori.voidsmood.ui.theme.IceWhite
@@ -35,8 +45,13 @@ import moe.rukamori.voidsmood.ui.theme.PolarCyan
 @Composable
 fun VoidsTopAppBar(
     onMenuClick: () -> Unit,
+    onSearch: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    var isSearchActive by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -68,40 +83,83 @@ fun VoidsTopAppBar(
                 )
             }
 
-            // VoidsMood Brand Monolith
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
+            if (isSearchActive) {
+                // Search Input Field
                 Box(
                     modifier = Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(PolarCyan)
-                )
-                Text(
-                    text = "VoidsMood",
-                    color = IceWhite,
-                    fontSize = 19.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.5.sp,
-                    fontFamily = FontFamily.SansSerif
-                )
+                        .weight(1f)
+                        .padding(horizontal = 8.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    if (searchQuery.isEmpty()) {
+                        Text(
+                            text = "Cari di YouTube...",
+                            color = Color(0xFF6E7487),
+                            fontSize = 14.sp
+                        )
+                    }
+                    BasicTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        singleLine = true,
+                        textStyle = TextStyle(
+                            color = IceWhite,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        ),
+                        cursorBrush = SolidColor(PolarCyan),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = {
+                            keyboardController?.hide()
+                            onSearch(searchQuery)
+                        }),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            } else {
+                // VoidsMood Brand Monolith
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(PolarCyan)
+                    )
+                    Text(
+                        text = "VoidsMood",
+                        color = IceWhite,
+                        fontSize = 19.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp,
+                        fontFamily = FontFamily.SansSerif
+                    )
+                }
             }
 
-            // Subtle Status Indicator / Action Placeholder (Touch target >= 48dp)
+            // Search Toggle Button (Touch target >= 48dp)
             Box(
                 modifier = Modifier
                     .size(48.dp)
                     .clip(CircleShape)
-                    .background(FadedGreyCharcoalAura.copy(alpha = 0.35f)),
+                    .clickable {
+                        if (isSearchActive) {
+                            if (searchQuery.isNotBlank()) {
+                                onSearch(searchQuery)
+                            } else {
+                                isSearchActive = false
+                            }
+                        } else {
+                            isSearchActive = true
+                        }
+                    },
                 contentAlignment = Alignment.Center
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(10.dp)
-                        .clip(CircleShape)
-                        .background(PolarCyan.copy(alpha = 0.8f))
+                LucideSearch(
+                    tint = if (isSearchActive) PolarCyan else IceWhite,
+                    size = 20.dp
                 )
             }
         }
