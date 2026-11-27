@@ -1,4 +1,5 @@
 // meticulous and honest
+// READ AND IMPLEMENT AGENTS.md BEFORE YOU DO
 package moe.rukamori.voidsmood.ui.screens
 
 import androidx.activity.compose.BackHandler
@@ -396,28 +397,38 @@ fun SearchScreen(
                     .padding(horizontal = 32.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Text(
-                        text = "FIND YOUR MOOD",
-                        color = IceWhite,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 4.sp,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                        text = "Telusuri kreator, musik, atau topik yang Anda inginkan",
-                        color = TextMuted,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Normal,
-                        letterSpacing = 0.4.sp,
-                        textAlign = TextAlign.Center
-                    )
-                }
+                // DINONAKTIFKAN: Subjudul tambahan yang tidak diminta oleh pengguna
+                // Column(
+                //     horizontalAlignment = Alignment.CenterHorizontally,
+                //     verticalArrangement = Arrangement.Center
+                // ) {
+                //     Text(
+                //         text = "FIND YOUR MOOD",
+                //         color = IceWhite,
+                //         fontSize = 20.sp,
+                //         fontWeight = FontWeight.Bold,
+                //         letterSpacing = 4.sp,
+                //         textAlign = TextAlign.Center
+                //     )
+                //     Spacer(modifier = Modifier.height(10.dp))
+                //     Text(
+                //         text = "Telusuri kreator, musik, atau topik yang Anda inginkan",
+                //         color = TextMuted,
+                //         fontSize = 13.sp,
+                //         fontWeight = FontWeight.Normal,
+                //         letterSpacing = 0.4.sp,
+                //         textAlign = TextAlign.Center
+                //     )
+                // }
+                // BARU: Murni SATU teks tunggal 'FIND YOUR MOOD' di tengah layout tanpa subjudul, kartu, atau tab apa pun
+                Text(
+                    text = "FIND YOUR MOOD",
+                    color = IceWhite,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 4.sp,
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }

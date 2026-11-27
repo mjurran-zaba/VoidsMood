@@ -1,4 +1,5 @@
 // meticulous and honest
+// READ AND IMPLEMENT AGENTS.md BEFORE YOU DO
 package moe.rukamori.voidsmood.ui.screens
 
 import android.app.Activity

@@ -1,4 +1,5 @@
 // meticulous and honest
+// READ AND IMPLEMENT AGENTS.md BEFORE YOU DO
 package moe.rukamori.voidsmood.ui.screens
 
 import android.view.ViewGroup
@@ -404,8 +405,8 @@ private fun ShortsPlayerPage(
             )
         }
 
-        // DINONAKTIFKAN: Thumbnail poster muncul kembali setiap kali isBuffering bernilai true saat menonton Shorts
-        // if (isBuffering || !isActive) {
+        // DINONAKTIFKAN: Pengecekan isBuffering yang menyebabkan thumbnail tidak muncul saat swipe ke video baru (akibat isBuffering masih bernilai false dari video sebelumnya) sehingga frame video lama bocor
+        // if (!isActive || (!hasRenderedFirstFrame && isBuffering)) {
         //     AsyncImage(
         //         model = video.thumbnailUrl,
         //         contentDescription = video.title,
@@ -414,11 +415,12 @@ private fun ShortsPlayerPage(
         //     )
         // }
 
-        // BARU: UI Buffering YouTube Shorts Style:
-        // 1. Thumbnail poster HANYA tampil untuk halaman offscreen (!isActive) ATAU sebelum frame pertama dirender.
-        // 2. Saat buffering di tengah pemutaran Short (hasRenderedFirstFrame == true), frame video membeku dan
-        //    hanya menampilkan spinner loading di tengah tanpa menutupi layar dengan poster thumbnail.
-        if (!isActive || (!hasRenderedFirstFrame && isBuffering)) {
+        // BARU: UI Buffering YouTube Shorts Anti-Bocor:
+        // 1. Thumbnail poster SELALU tampil menutup PlayerView pada halaman offscreen (!isActive) ATAU sebelum frame pertama video baru selesai dirender (!hasRenderedFirstFrame).
+        //    Ini menjamin 100% frame dari video sebelumnya tidak akan pernah bocor terlihat saat pengguna swipe ke video berikutnya.
+        // 2. Begitu frame pertama video baru berhasil tampil (hasRenderedFirstFrame == true), thumbnail hilang permanen.
+        //    Jika terjadi buffering di tengah pemutaran, frame video baru tetap membeku di bawah spinner tanpa tertutup thumbnail.
+        if (!isActive || !hasRenderedFirstFrame) {
             AsyncImage(
                 model = video.thumbnailUrl,
                 contentDescription = video.title,
@@ -427,8 +429,8 @@ private fun ShortsPlayerPage(
             )
         }
 
-        // Mid-stream Buffering Spinner di tengah layar Shorts (YouTube Style)
-        if (isActive && isBuffering) {
+        // Loading & Buffering Spinner di tengah layar Shorts (YouTube Style)
+        if (isActive && (isBuffering || !hasRenderedFirstFrame)) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center

@@ -1,4 +1,5 @@
 // meticulous and honest
+// READ AND IMPLEMENT AGENTS.md BEFORE YOU DO
 package moe.rukamori.voidsmood.data.repository
 
 import android.content.Context

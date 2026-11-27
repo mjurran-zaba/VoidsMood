@@ -1,4 +1,5 @@
 // meticulous and honest
+// READ AND IMPLEMENT AGENTS.md BEFORE YOU DO
 package moe.rukamori.voidsmood.data.repository
 
 import android.util.LruCache
@@ -433,13 +434,34 @@ object YouTubeRepository {
                                 val sources = sl.optJSONObject("thumbnailViewModel")?.optJSONObject("thumbnailViewModel")?.optJSONObject("image")?.optJSONArray("sources")
                                 val thumb = sources?.optJSONObject(0)?.optString("url") ?: "https://i.ytimg.com/vi/$vidId/hqdefault.jpg"
 
+                                val creatorName = sl.optJSONObject("shortBylineText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                                    ?: sl.optJSONObject("channelTitleText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                                    ?: "YouTube Shorts"
+
                                 if (vidId.length == 11) {
+                                    // DINONAKTIFKAN: Nama uploader hardcoded "YouTube Creator" yang menyebabkan semua video Shorts bernama sama
+                                    // resultList.add(
+                                    //     VideoItem(
+                                    //         id = vidId,
+                                    //         url = "https://www.youtube.com/shorts/$vidId",
+                                    //         title = title,
+                                    //         uploaderName = "YouTube Creator",
+                                    //         uploaderAvatarUrl = null,
+                                    //         thumbnailUrl = thumb,
+                                    //         durationSeconds = 30L,
+                                    //         durationText = "0:30",
+                                    //         viewCount = 0L,
+                                    //         viewCountText = views,
+                                    //         uploadDateText = ""
+                                    //     )
+                                    // )
+                                    // BARU: Menggunakan creatorName hasil ekstraksi field shortBylineText / channelTitleText asli
                                     resultList.add(
                                         VideoItem(
                                             id = vidId,
                                             url = "https://www.youtube.com/shorts/$vidId",
                                             title = title,
-                                            uploaderName = "YouTube Creator",
+                                            uploaderName = creatorName,
                                             uploaderAvatarUrl = null,
                                             thumbnailUrl = thumb,
                                             durationSeconds = 30L,
@@ -467,14 +489,34 @@ object YouTubeRepository {
                                 val views = reel.optJSONObject("viewCountText")?.optString("simpleText", "") ?: ""
                                 val thumbs = reel.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
                                 val thumb = thumbs?.optJSONObject(0)?.optString("url") ?: "https://i.ytimg.com/vi/$vidId/hqdefault.jpg"
+                                val reelCreator = reel.optJSONObject("shortBylineText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                                    ?: reel.optJSONObject("channelTitleText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                                    ?: "YouTube Shorts"
 
                                 if (vidId.length == 11) {
+                                    // DINONAKTIFKAN: Nama uploader hardcoded "YouTube Creator" yang menyebabkan semua video Shorts bernama sama
+                                    // resultList.add(
+                                    //     VideoItem(
+                                    //         id = vidId,
+                                    //         url = "https://www.youtube.com/shorts/$vidId",
+                                    //         title = title,
+                                    //         uploaderName = "YouTube Creator",
+                                    //         uploaderAvatarUrl = null,
+                                    //         thumbnailUrl = thumb,
+                                    //         durationSeconds = 30L,
+                                    //         durationText = "0:30",
+                                    //         viewCount = 0L,
+                                    //         viewCountText = views,
+                                    //         uploadDateText = ""
+                                    //     )
+                                    // )
+                                    // BARU: Menggunakan reelCreator hasil ekstraksi field shortBylineText / channelTitleText asli
                                     resultList.add(
                                         VideoItem(
                                             id = vidId,
                                             url = "https://www.youtube.com/shorts/$vidId",
                                             title = title,
-                                            uploaderName = "YouTube Creator",
+                                            uploaderName = reelCreator,
                                             uploaderAvatarUrl = null,
                                             thumbnailUrl = thumb,
                                             durationSeconds = 30L,

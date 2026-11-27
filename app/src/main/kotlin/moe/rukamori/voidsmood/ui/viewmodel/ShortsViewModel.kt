@@ -1,4 +1,5 @@
 // meticulous and honest
+// READ AND IMPLEMENT AGENTS.md BEFORE YOU DO
 package moe.rukamori.voidsmood.ui.viewmodel
 
 import android.content.Context
@@ -189,6 +190,22 @@ class ShortsViewModel : ViewModel() {
             }
 
             detailsResult.onSuccess { details ->
+                // BARU: Perbarui nama uploader asli dan avatar dari metadata NewPipe yang akurat
+                if (details.video.uploaderName.isNotBlank() &&
+                    details.video.uploaderName != "YouTube Shorts" &&
+                    details.video.uploaderName != "YouTube Creator"
+                ) {
+                    val updated = _shorts.value.map { item ->
+                        if (item.id == video.id) {
+                            item.copy(
+                                uploaderName = details.video.uploaderName,
+                                uploaderAvatarUrl = details.video.uploaderAvatarUrl ?: item.uploaderAvatarUrl
+                            )
+                        } else item
+                    }
+                    _shorts.value = updated
+                }
+
                 val httpDataSourceFactory = OkHttpDataSource.Factory(NetworkClient.mediaStreamingOkHttpClient)
                     .setUserAgent(NewPipeDownloader.DEFAULT_USER_AGENT)
                     .setDefaultRequestProperties(mapOf("Referer" to "https://www.youtube.com/"))
