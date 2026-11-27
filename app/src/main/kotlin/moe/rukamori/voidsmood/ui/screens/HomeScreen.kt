@@ -207,9 +207,9 @@ private fun SuccessFeedView(
             }
         }
 
-        // Bottom Spacer untuk clearance Floating AppleBottomNavigationBar
+        // Bottom Spacer untuk clearance Floating AppleBottomNavigationBar & MiniPlayerBar
         item {
-            Spacer(modifier = Modifier.height(100.dp))
+            Spacer(modifier = Modifier.height(150.dp))
         }
     }
 }

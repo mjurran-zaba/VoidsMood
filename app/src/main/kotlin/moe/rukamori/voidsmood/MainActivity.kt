@@ -8,6 +8,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -18,12 +21,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,11 +36,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
-import moe.rukamori.voidsmood.data.model.VideoItem
 import moe.rukamori.voidsmood.ui.components.AppleBottomNavigationBar
+import moe.rukamori.voidsmood.ui.components.MiniPlayerBar
 import moe.rukamori.voidsmood.ui.components.NavigationTab
 import moe.rukamori.voidsmood.ui.components.VoidsTopAppBar
 import moe.rukamori.voidsmood.ui.screens.HomeScreen
@@ -45,6 +55,7 @@ import moe.rukamori.voidsmood.ui.theme.PureBlack
 import moe.rukamori.voidsmood.ui.theme.TextMuted
 import moe.rukamori.voidsmood.ui.theme.VoidsMoodTheme
 import moe.rukamori.voidsmood.ui.viewmodel.HomeViewModel
+import moe.rukamori.voidsmood.ui.viewmodel.PlayerMode
 import moe.rukamori.voidsmood.ui.viewmodel.PlayerViewModel
 
 class MainActivity : ComponentActivity() {
@@ -61,28 +72,71 @@ class MainActivity : ComponentActivity() {
                 val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
                 val scope = rememberCoroutineScope()
                 var currentTab by remember { mutableStateOf(NavigationTab.HOME) }
-                var activeVideo by remember { mutableStateOf<VideoItem?>(null) }
 
-                // BARU: State kontrol kemunculan layer pencarian penuh dengan animasi slide-to-left
+                // State reaktif pemutar video & miniplayer dari PlayerViewModel
+                val playerMode by playerViewModel.playerMode.collectAsState()
+                val activeVideo by playerViewModel.activeVideo.collectAsState()
+                val isPlaying by playerViewModel.isPlaying.collectAsState()
+                val currentPosition by playerViewModel.currentPosition.collectAsState()
+                val duration by playerViewModel.duration.collectAsState()
+
+                // BARU: Logika Scroll-Aware (Opsi 2) untuk Bottom Navigation dan MiniPlayer
+                // Menyembunyikan bar saat scroll ke bawah (membaca feed) dan memunculkan kembali saat scroll ke atas
+                var isNavigationVisible by remember { mutableStateOf(true) }
+
+                val nestedScrollConnection = remember {
+                    object : NestedScrollConnection {
+                        override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                            val delta = available.y
+                            if (delta < -10f) {
+                                // Geser ke bawah -> sembunyikan navigasi agar layar feed lega
+                                isNavigationVisible = false
+                            } else if (delta > 10f) {
+                                // Geser ke atas -> tampilkan kembali navigasi
+                                isNavigationVisible = true
+                            }
+                            return Offset.Zero
+                        }
+                    }
+                }
+
+                val navOffsetY by animateDpAsState(
+                    targetValue = if (isNavigationVisible) 0.dp else 100.dp,
+                    animationSpec = spring(
+                        stiffness = Spring.StiffnessMediumLow,
+                        dampingRatio = Spring.DampingRatioNoBouncy
+                    ),
+                    label = "navOffsetY"
+                )
+
+                val miniPlayerOffsetY by animateDpAsState(
+                    targetValue = if (isNavigationVisible) 0.dp else 66.dp,
+                    animationSpec = spring(
+                        stiffness = Spring.StiffnessMediumLow,
+                        dampingRatio = Spring.DampingRatioNoBouncy
+                    ),
+                    label = "miniPlayerOffsetY"
+                )
+
+                // State kontrol kemunculan layer pencarian penuh dengan animasi slide-to-left
                 var isSearchActive by remember { mutableStateOf(false) }
 
-                if (activeVideo != null) {
+                if (playerMode == PlayerMode.FULL && activeVideo != null) {
+                    // MODE 1: Layar Penuh Pemutar Video (PlayerScreen YouTube Style)
                     PlayerScreen(
                         video = activeVideo!!,
                         viewModel = playerViewModel,
                         onBack = {
-                            playerViewModel.closePlayer()
-                            activeVideo = null
+                            // Menekan tombol back di full player meminimalisir video ke Miniplayer
+                            playerViewModel.minimizePlayer()
                         },
                         onVideoSelect = { newVideo ->
-                            activeVideo = newVideo
+                            playerViewModel.openVideo(newVideo)
                         }
                     )
                 } else {
+                    // MODE 2: Beranda Scaffold Navigasi dengan Miniplayer Melayang di Atas Bottom Bar
                     Box(modifier = Modifier.fillMaxSize()) {
-                        // DINONAKTIFKAN: Konten drawer navigasi lama (VoidsDrawerContent)
-                        // drawerContent = { VoidsDrawerContent(...) }
-                        // BARU: Drawer kosong murni sesuai instruksi user ("di drawer kosong aja")
                         ModalNavigationDrawer(
                             drawerState = drawerState,
                             scrimColor = Color.Black.copy(alpha = 0.50f),
@@ -115,6 +169,7 @@ class MainActivity : ComponentActivity() {
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .padding(innerPadding)
+                                        .nestedScroll(nestedScrollConnection)
                                 ) {
                                     // Tampilan Konten Berdasarkan 4 Tab Navigasi
                                     when (currentTab) {
@@ -122,7 +177,7 @@ class MainActivity : ComponentActivity() {
                                             HomeScreen(
                                                 viewModel = homeViewModel,
                                                 onVideoClick = { video ->
-                                                    activeVideo = video
+                                                    playerViewModel.openVideo(video)
                                                 }
                                             )
                                         }
@@ -164,7 +219,25 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
 
-                                    // BARU: Floating Apple-Style Capsule Navigation Toolbar (4 Tab)
+                                    // BARU: MiniPlayer YouTube Standar (Opsi 1)
+                                    // Muncul tepat di atas AppleBottomNavigationBar saat video diminimalkan
+                                    if (playerMode == PlayerMode.MINI && activeVideo != null) {
+                                        MiniPlayerBar(
+                                            video = activeVideo!!,
+                                            isPlaying = isPlaying,
+                                            currentPosition = currentPosition,
+                                            duration = duration,
+                                            onExpand = { playerViewModel.expandPlayer() },
+                                            onPlayPauseToggle = { playerViewModel.togglePlayPause() },
+                                            onClose = { playerViewModel.closePlayer() },
+                                            modifier = Modifier
+                                                .align(Alignment.BottomCenter)
+                                                .padding(bottom = 76.dp)
+                                                .offset(y = miniPlayerOffsetY)
+                                        )
+                                    }
+
+                                    // Floating Apple-Style Capsule Navigation Toolbar (4 Tab) dengan Scroll-Aware Offset
                                     AppleBottomNavigationBar(
                                         currentTab = currentTab,
                                         onTabSelected = { tab ->
@@ -173,14 +246,15 @@ class MainActivity : ComponentActivity() {
                                                 homeViewModel.loadTrending()
                                             }
                                         },
-                                        modifier = Modifier.align(Alignment.BottomCenter)
+                                        modifier = Modifier
+                                            .align(Alignment.BottomCenter)
+                                            .offset(y = navOffsetY)
                                     )
                                 }
                             }
                         }
 
-                        // BARU: Layer Pencarian Baru yang meluncur mulus dari kanan ke kiri (slide to left)
-                        // Menyediakan live suggestions saat mengetik dan saran pencarian YouTube real-time
+                        // Layer Pencarian Baru yang meluncur mulus dari kanan ke kiri (slide to left)
                         AnimatedVisibility(
                             visible = isSearchActive,
                             enter = slideInHorizontally(

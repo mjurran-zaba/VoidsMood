@@ -334,11 +334,9 @@ fun PlayerScreen(
             )
     }
 
-    // ExoPlayer Lifecycle instance dengan Listener
+    // ExoPlayer instance bersama dari ViewModel agar pemutaran terus berjalan lancar di Miniplayer
     val exoPlayer = remember(context) {
-        ExoPlayer.Builder(context).build().apply {
-            playWhenReady = true
-        }
+        viewModel.getOrCreateExoPlayer(context)
     }
 
     DisposableEffect(exoPlayer) {
@@ -376,8 +374,8 @@ fun PlayerScreen(
         exoPlayer.addListener(listener)
         onDispose {
             exoPlayer.removeListener(listener)
-            exoPlayer.stop()
-            exoPlayer.release()
+            // DINONAKTIFKAN: exoPlayer.stop() dan exoPlayer.release()
+            // BARU: Biarkan pemutaran terus berlanjut saat beralih ke Miniplayer
         }
     }
 
