@@ -49,16 +49,16 @@ object YouTubeRepository {
                 .filterIsInstance<StreamInfoItem>()
                 .map { item ->
                     val videoId = item.url.substringAfter("v=").substringBefore("&")
+                    // BARU: Ambil URL dari list thumbnails dan uploaderAvatars bawaan NewPipeExtractor
+                    val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+                    val avatar = item.uploaderAvatars.firstOrNull()?.url
                     VideoItem(
                         id = videoId,
                         url = item.url,
                         title = item.name ?: "Untitled",
                         uploaderName = item.uploaderName ?: "Unknown Creator",
-                        // DINONAKTIFKAN: uploaderAvatarUrl tidak ada pada StreamInfoItem NewPipeExtractor 0.27.1
-                        // uploaderAvatarUrl = item.uploaderAvatarUrl,
-                        // BARU: Set null, UI otomatis me-render inisial channel elegan
-                        uploaderAvatarUrl = null,
-                        thumbnailUrl = item.thumbnailUrl ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
+                        uploaderAvatarUrl = avatar,
+                        thumbnailUrl = thumb,
                         durationSeconds = item.duration,
                         durationText = VideoItem.formatDuration(item.duration),
                         viewCount = item.viewCount,
@@ -84,16 +84,16 @@ object YouTubeRepository {
                 .filterIsInstance<StreamInfoItem>()
                 .map { item ->
                     val videoId = item.url.substringAfter("v=").substringBefore("&")
+                    // BARU: Ambil URL dari list thumbnails dan uploaderAvatars bawaan NewPipeExtractor
+                    val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+                    val avatar = item.uploaderAvatars.firstOrNull()?.url
                     VideoItem(
                         id = videoId,
                         url = item.url,
                         title = item.name ?: "Untitled",
                         uploaderName = item.uploaderName ?: "Unknown Creator",
-                        // DINONAKTIFKAN: uploaderAvatarUrl tidak ada pada StreamInfoItem NewPipeExtractor 0.27.1
-                        // uploaderAvatarUrl = item.uploaderAvatarUrl,
-                        // BARU: Set null, UI otomatis me-render inisial channel elegan
-                        uploaderAvatarUrl = null,
-                        thumbnailUrl = item.thumbnailUrl ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
+                        uploaderAvatarUrl = avatar,
+                        thumbnailUrl = thumb,
                         durationSeconds = item.duration,
                         durationText = VideoItem.formatDuration(item.duration),
                         viewCount = item.viewCount,
