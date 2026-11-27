@@ -8,7 +8,6 @@ import moe.rukamori.voidsmood.data.model.VideoPlaybackDetails
 import moe.rukamori.voidsmood.data.network.NewPipeDownloader
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.schabi.newpipe.extractor.InfoItem
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.kiosk.KioskInfo
@@ -43,7 +42,12 @@ object YouTubeRepository {
         if (!isInitialized) {
             synchronized(this) {
                 if (!isInitialized) {
-                    NewPipe.init(NewPipeDownloader.getInstance())
+                    val downloader = NewPipeDownloader()
+                    NewPipe.init(
+                        downloader,
+                        Localization("id", "ID"),
+                        ContentCountry("ID")
+                    )
                     isInitialized = true
                 }
             }
@@ -60,76 +64,62 @@ object YouTubeRepository {
             }
 
             val seed = FEED_SEEDS[currentSeedIndex]
-            val allVideos = mutableListOf<VideoItem>()
+            val service = ServiceList.YouTube
+            val searchExtractor = service.getSearchExtractor(seed)
+            searchExtractor.fetchPage()
+            val searchInfo = SearchInfo.getInfo(searchExtractor)
 
-            // 1. Eksekusi pencarian berdasarkan topik seed aktif untuk mendapatkan konten segar
-            try {
-                val searchInfo = SearchInfo.getInfo(
-                    ServiceList.YouTube,
-                    ServiceList.YouTube.searchQHFactory.fromQuery(seed),
-                    ContentCountry("ID"),
-                    Localization("id", "ID")
-                )
-                val searchItems = searchInfo.relatedItems
-                    .filterIsInstance<StreamInfoItem>()
-                    .map { item ->
-                        val videoId = item.url.substringAfter("v=").substringBefore("&")
-                        val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
-                        val avatar = item.uploaderAvatars.firstOrNull()?.url
-                        VideoItem(
-                            id = videoId,
-                            url = item.url,
-                            title = item.name ?: "Untitled",
-                            uploaderName = item.uploaderName ?: "Unknown Creator",
-                            uploaderAvatarUrl = avatar,
-                            thumbnailUrl = thumb,
-                            durationSeconds = item.duration,
-                            durationText = VideoItem.formatDuration(item.duration),
-                            viewCount = item.viewCount,
-                            viewCountText = VideoItem.formatViews(item.viewCount),
-                            uploadDateText = item.textualUploadDate ?: ""
-                        )
-                    }
-                allVideos.addAll(searchItems)
-            } catch (_: Exception) {}
+            val videoItems = searchInfo.relatedItems
+                .filterIsInstance<StreamInfoItem>()
+                .map { item ->
+                    val videoId = item.url.substringAfter("v=").substringBefore("&")
+                    val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+                    val avatar = item.uploaderAvatars.firstOrNull()?.url
+                    VideoItem(
+                        id = videoId,
+                        url = item.url,
+                        title = item.name ?: "Untitled",
+                        uploaderName = item.uploaderName ?: "Unknown Creator",
+                        uploaderAvatarUrl = avatar,
+                        thumbnailUrl = thumb,
+                        durationSeconds = item.duration,
+                        durationText = VideoItem.formatDuration(item.duration),
+                        viewCount = item.viewCount,
+                        viewCountText = VideoItem.formatViews(item.viewCount),
+                        uploadDateText = item.textualUploadDate ?: ""
+                    )
+                }
 
-            // 2. Ambil juga feed kiosk Trending bawaan sebagai pengayaan
-            try {
-                val defaultKiosk = ServiceList.YouTube.kioskList.defaultKioskId
-                val kioskInfo = KioskInfo.getInfo(
-                    ServiceList.YouTube,
-                    ServiceList.YouTube.kioskList.getListFor(defaultKiosk).contentFilter[0],
-                    ContentCountry("ID"),
-                    Localization("id", "ID")
-                )
-                val kioskVideos = kioskInfo.relatedItems
-                    .filterIsInstance<StreamInfoItem>()
-                    .map { item ->
-                        val videoId = item.url.substringAfter("v=").substringBefore("&")
-                        val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
-                        val avatar = item.uploaderAvatars.firstOrNull()?.url
-                        VideoItem(
-                            id = videoId,
-                            url = item.url,
-                            title = item.name ?: "Untitled",
-                            uploaderName = item.uploaderName ?: "Unknown Creator",
-                            uploaderAvatarUrl = avatar,
-                            thumbnailUrl = thumb,
-                            durationSeconds = item.duration,
-                            durationText = VideoItem.formatDuration(item.duration),
-                            viewCount = item.viewCount,
-                            viewCountText = VideoItem.formatViews(item.viewCount),
-                            uploadDateText = item.textualUploadDate ?: ""
-                        )
-                    }
-                allVideos.addAll(kioskVideos)
-            } catch (_: Exception) {}
-
-            val distinctVideos = allVideos.distinctBy { it.id }
-            if (distinctVideos.isNotEmpty()) {
-                Result.success(distinctVideos)
+            if (videoItems.isNotEmpty()) {
+                Result.success(videoItems)
             } else {
-                Result.failure(Exception("Tidak dapat memuat video saat ini. Periksa koneksi internet."))
+                // Fallback ke Kiosk Trending bawaan
+                val kioskList = service.kioskList
+                val defaultKiosk = kioskList.defaultKioskId ?: "Trending"
+                val extractor = kioskList.getExtractorById(defaultKiosk, null)
+                extractor.fetchPage()
+                val kioskInfo = KioskInfo.getInfo(extractor)
+                val fallbackItems = kioskInfo.relatedItems
+                    .filterIsInstance<StreamInfoItem>()
+                    .map { item ->
+                        val videoId = item.url.substringAfter("v=").substringBefore("&")
+                        val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+                        val avatar = item.uploaderAvatars.firstOrNull()?.url
+                        VideoItem(
+                            id = videoId,
+                            url = item.url,
+                            title = item.name ?: "Untitled",
+                            uploaderName = item.uploaderName ?: "Unknown Creator",
+                            uploaderAvatarUrl = avatar,
+                            thumbnailUrl = thumb,
+                            durationSeconds = item.duration,
+                            durationText = VideoItem.formatDuration(item.duration),
+                            viewCount = item.viewCount,
+                            viewCountText = VideoItem.formatViews(item.viewCount),
+                            uploadDateText = item.textualUploadDate ?: ""
+                        )
+                    }
+                Result.success(fallbackItems)
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -143,12 +133,10 @@ object YouTubeRepository {
             val seedIndex = (currentSeedIndex + pageOffset) % FEED_SEEDS.size
             val nextSeed = FEED_SEEDS[seedIndex]
 
-            val searchInfo = SearchInfo.getInfo(
-                ServiceList.YouTube,
-                ServiceList.YouTube.searchQHFactory.fromQuery(nextSeed),
-                ContentCountry("ID"),
-                Localization("id", "ID")
-            )
+            val service = ServiceList.YouTube
+            val searchExtractor = service.getSearchExtractor(nextSeed)
+            searchExtractor.fetchPage()
+            val searchInfo = SearchInfo.getInfo(searchExtractor)
 
             val newVideos = searchInfo.relatedItems
                 .filterIsInstance<StreamInfoItem>()
@@ -181,12 +169,10 @@ object YouTubeRepository {
     suspend fun searchVideos(query: String): Result<List<VideoItem>> = withContext(Dispatchers.IO) {
         try {
             initIfNeeded()
-            val searchInfo = SearchInfo.getInfo(
-                ServiceList.YouTube,
-                ServiceList.YouTube.searchQHFactory.fromQuery(query),
-                ContentCountry("ID"),
-                Localization("id", "ID")
-            )
+            val service = ServiceList.YouTube
+            val searchExtractor = service.getSearchExtractor(query)
+            searchExtractor.fetchPage()
+            val searchInfo = SearchInfo.getInfo(searchExtractor)
 
             val videos = searchInfo.relatedItems
                 .filterIsInstance<StreamInfoItem>()
@@ -299,17 +285,19 @@ object YouTubeRepository {
             val rawResolutions = mutableListOf<String>()
 
             info.videoStreams?.forEach { s ->
+                val streamUrl = s.url
                 val r = s.resolution?.trim() ?: if (s.height > 0) "${s.height}p" else null
-                if (!r.isNullOrBlank() && !resMap.containsKey(r) && !s.url.isNullOrBlank()) {
-                    resMap[r] = s.url
+                if (!r.isNullOrBlank() && !streamUrl.isNullOrBlank() && !resMap.containsKey(r)) {
+                    resMap[r] = streamUrl
                     rawResolutions.add(r)
                 }
             }
 
             info.videoOnlyStreams?.forEach { s ->
+                val streamUrl = s.url
                 val r = s.resolution?.trim() ?: if (s.height > 0) "${s.height}p" else null
-                if (!r.isNullOrBlank() && !resMap.containsKey(r) && !s.url.isNullOrBlank()) {
-                    resMap[r] = s.url
+                if (!r.isNullOrBlank() && !streamUrl.isNullOrBlank() && !resMap.containsKey(r)) {
+                    resMap[r] = streamUrl
                     rawResolutions.add(r)
                 }
             }
