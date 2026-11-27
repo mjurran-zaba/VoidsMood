@@ -279,6 +279,10 @@ class MainActivity : ComponentActivity() {
                                                 } else {
                                                     homeViewModel.loadTrending(forceReload = false)
                                                 }
+                                            } else if (tab == NavigationTab.SHORTS) {
+                                                // BARU: Saat pengguna masuk ke tab Shorts (misal setelah menekan tombol back ke Home lalu masuk Shorts kembali),
+                                                // selalu muat kumpulan video Shorts baru dengan rotasi topik agar kontennya selalu berubah dan segar
+                                                shortsViewModel.loadShorts(refresh = true)
                                             }
                                         },
                                         modifier = Modifier

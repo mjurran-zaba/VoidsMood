@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import moe.rukamori.voidsmood.data.model.VideoItem
 import moe.rukamori.voidsmood.data.network.NetworkClient
 import moe.rukamori.voidsmood.data.network.NewPipeDownloader
@@ -108,17 +109,29 @@ class ShortsViewModel : ViewModel() {
 
         viewModelScope.launch(Dispatchers.IO) {
             val result = YouTubeRepository.getShortsFeed(refresh = refresh)
-            result.onSuccess { list ->
-                _shorts.value = list
-                _uiState.value = ShortsUiState.Success(list)
-                _isRefreshing.value = false
-                if (list.isNotEmpty()) {
-                    playShortAt(0)
-                }
-            }.onFailure { err ->
-                _isRefreshing.value = false
-                if (_shorts.value.isEmpty()) {
-                    _uiState.value = ShortsUiState.Error(err.localizedMessage ?: "Gagal memuat YouTube Shorts.")
+            // DINONAKTIFKAN: Eksekusi player dan mutasi state di worker thread Dispatchers.IO yang menyebabkan force close (IllegalStateException: Player is accessed on the wrong thread)
+            // result.onSuccess { list ->
+            //     _shorts.value = list
+            //     _uiState.value = ShortsUiState.Success(list)
+            //     _isRefreshing.value = false
+            //     if (list.isNotEmpty()) {
+            //         playShortAt(0)
+            //     }
+            // }
+            // BARU: Alihkan kembali ke Dispatchers.Main sebelum memperbarui state dan memulai pemutaran player
+            withContext(Dispatchers.Main) {
+                result.onSuccess { list ->
+                    _shorts.value = list
+                    _uiState.value = ShortsUiState.Success(list)
+                    _isRefreshing.value = false
+                    if (list.isNotEmpty()) {
+                        playShortAt(0)
+                    }
+                }.onFailure { err ->
+                    _isRefreshing.value = false
+                    if (_shorts.value.isEmpty()) {
+                        _uiState.value = ShortsUiState.Error(err.localizedMessage ?: "Gagal memuat YouTube Shorts.")
+                    }
                 }
             }
         }
@@ -130,15 +143,17 @@ class ShortsViewModel : ViewModel() {
 
         viewModelScope.launch(Dispatchers.IO) {
             val result = YouTubeRepository.loadMoreShortsFeed(pageOffset)
-            result.onSuccess { newItems ->
-                if (newItems.isNotEmpty()) {
-                    val combined = (_shorts.value + newItems).distinctBy { it.id }
-                    _shorts.value = combined
-                    _uiState.value = ShortsUiState.Success(combined)
-                    pageOffset++
+            withContext(Dispatchers.Main) {
+                result.onSuccess { newItems ->
+                    if (newItems.isNotEmpty()) {
+                        val combined = (_shorts.value + newItems).distinctBy { it.id }
+                        _shorts.value = combined
+                        _uiState.value = ShortsUiState.Success(combined)
+                        pageOffset++
+                    }
                 }
+                _isLoadingMore.value = false
             }
-            _isLoadingMore.value = false
         }
     }
 
@@ -151,26 +166,29 @@ class ShortsViewModel : ViewModel() {
         // sehingga saat pengguna swipe ke bawah, pemutaran langsung berputar seketika tanpa buffering
         prefetchUpcomingShorts(index)
 
-        if (currentPlayingVideoId == video.id && exoPlayerInstance?.playbackState == Player.STATE_READY) {
-            exoPlayerInstance?.play()
-            return
-        }
+        // DINONAKTIFKAN: Manipulasi player.pause(), player.stop() di thread pemanggil (bisa Dispatchers.IO) yang memicu crash
+        // BARU: Garansi 100% semua interaksi dengan ExoPlayer dijalankan di Main Thread (Dispatchers.Main)
+        viewModelScope.launch(Dispatchers.Main) {
+            val player = exoPlayerInstance ?: return@launch
 
-        currentPlayingVideoId = video.id
-        LocalLibraryRepository.addToHistory(video)
-        _isBuffering.value = true
+            if (currentPlayingVideoId == video.id && player.playbackState == Player.STATE_READY) {
+                player.play()
+                return@launch
+            }
 
-        val player = exoPlayerInstance ?: return
-        player.pause()
-        player.stop()
-        player.clearMediaItems()
+            currentPlayingVideoId = video.id
+            LocalLibraryRepository.addToHistory(video)
+            _isBuffering.value = true
 
-        viewModelScope.launch(Dispatchers.IO) {
-            val detailsResult = YouTubeRepository.getVideoPlaybackDetails(video.id)
+            player.pause()
+            player.stop()
+            player.clearMediaItems()
+
+            val detailsResult = withContext(Dispatchers.IO) {
+                YouTubeRepository.getVideoPlaybackDetails(video.id)
+            }
+
             detailsResult.onSuccess { details ->
-                // DINONAKTIFKAN: Penggunaan klien umum untuk streaming media
-                // val httpDataSourceFactory = OkHttpDataSource.Factory(NetworkClient.okHttpClient)
-                // BARU: Gunakan mediaStreamingOkHttpClient dengan retryOnConnectionFailure = false & 45s keep-alive
                 val httpDataSourceFactory = OkHttpDataSource.Factory(NetworkClient.mediaStreamingOkHttpClient)
                     .setUserAgent(NewPipeDownloader.DEFAULT_USER_AGENT)
                     .setDefaultRequestProperties(mapOf("Referer" to "https://www.youtube.com/"))
@@ -195,11 +213,9 @@ class ShortsViewModel : ViewModel() {
                 }
 
                 if (mediaSource != null) {
-                    launch(Dispatchers.Main) {
-                        player.setMediaSource(mediaSource)
-                        player.prepare()
-                        player.play()
-                    }
+                    player.setMediaSource(mediaSource)
+                    player.prepare()
+                    player.play()
                 }
             }
         }

@@ -207,6 +207,15 @@ fun ShortsScreen(
                     pageCount = { shortsList.size }
                 )
 
+                // BARU: Reset scroll ke halaman teratas (page 0) saat shortsList di-refresh dengan batch video baru
+                LaunchedEffect(shortsList) {
+                    if (shortsList.isNotEmpty() && pagerState.currentPage != 0) {
+                        try {
+                            pagerState.scrollToPage(0)
+                        } catch (_: Exception) {}
+                    }
+                }
+
                 // BARU: Pindah video di ExoPlayer saat halaman pager digeser ke video berikutnya / sebelumnya
                 LaunchedEffect(pagerState.currentPage) {
                     if (shortsList.isNotEmpty()) {
@@ -223,9 +232,13 @@ fun ShortsScreen(
 
                 VerticalPager(
                     state = pagerState,
+                    key = { page -> shortsList.getOrNull(page)?.id ?: page },
                     modifier = Modifier.fillMaxSize()
                 ) { page ->
-                    val shortItem = shortsList[page]
+                    // DINONAKTIFKAN: Akses indeks langsung shortsList[page] yang berisiko melempar IndexOutOfBoundsException saat paging berubah
+                    // val shortItem = shortsList[page]
+                    // BARU: Akses aman dengan getOrNull untuk mencegah force close saat transisi batch list
+                    val shortItem = shortsList.getOrNull(page) ?: return@VerticalPager
                     val isCurrentPage = pagerState.currentPage == page
 
                     ShortsPlayerPage(
@@ -560,7 +573,7 @@ private fun ShortsPlayerPage(
             }
         }
 
-        // BARU: Garis progres pemutaran tipis (PolarCyan) di dasar layar video Shorts
+        // BARU: Garis progres pemutaran tipis (PolarCyan) di dasar layar video Shorts dengan proteksi NaN/zero-division
         var currentPositionMs by remember { mutableStateOf(0L) }
         var totalDurationMs by remember { mutableStateOf(1L) }
 
@@ -574,7 +587,11 @@ private fun ShortsPlayerPage(
             }
         }
 
-        val progress = (currentPositionMs.toFloat() / totalDurationMs.toFloat()).coerceIn(0f, 1f)
+        val progress = if (totalDurationMs > 0L) {
+            (currentPositionMs.toFloat() / totalDurationMs.toFloat()).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
         Box(
             modifier = Modifier
                 .align(Alignment.BottomStart)
