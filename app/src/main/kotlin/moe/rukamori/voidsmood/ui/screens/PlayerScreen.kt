@@ -630,7 +630,7 @@ fun PlayerScreen(
 
             // BARU: Kontrol Video 100% Persis Plek Ketiplek YouTube Mobile
             // Muncul bersamaan saat diketuk, dan menghilang total (fade-out) bersamaan tanpa ada tombol tertinggal
-            AnimatedVisibility(
+            androidx.compose.animation.AnimatedVisibility(
                 visible = areControlsVisible,
                 enter = fadeIn(tween(180)),
                 exit = fadeOut(tween(180)),
