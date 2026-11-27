@@ -252,7 +252,20 @@ fun PlayerScreen(
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
 
-    var isBuffering by remember { mutableStateOf(true) }
+    // ExoPlayer instance bersama dari ViewModel agar pemutaran terus berjalan lancar di Miniplayer
+    val exoPlayer = remember(context) {
+        viewModel.getOrCreateExoPlayer(context)
+    }
+
+    // DINONAKTIFKAN: Inisialisasi isBuffering selalu true yang menyebabkan tampilan berkedip/hitam saat expand dari miniplayer
+    // var isBuffering by remember { mutableStateOf(true) }
+    // BARU: Cek apakah ExoPlayer sudah siap memutar video aktif saat ini
+    var isBuffering by remember {
+        mutableStateOf(
+            exoPlayer.currentMediaItem?.mediaId != video.id ||
+            exoPlayer.playbackState == Player.STATE_BUFFERING
+        )
+    }
     var playbackError by remember { mutableStateOf<String?>(null) }
 
     // State kontrol Fullscreen & Mode Landscape
@@ -312,14 +325,41 @@ fun PlayerScreen(
         }
     }
 
+    // DINONAKTIFKAN: LaunchedEffect(video.id) yang memicu pemuatan ulang setiap kali PlayerScreen masuk komposisi
+    // LaunchedEffect(video.id) {
+    //     viewModel.loadVideo(video)
+    //     selectedQuality = "Auto"
+    //     areControlsVisible = true
+    //     lastInteractionTime = System.currentTimeMillis()
+    // }
+    // BARU: Hanya load video jika media belum dimuat atau ID video berbeda, sehingga pemutaran tetap berlanjut mulus saat expand dari MiniPlayerBar
     LaunchedEffect(video.id) {
-        viewModel.loadVideo(video)
+        val currentLoadedId = exoPlayer.currentMediaItem?.mediaId
+        val isAlreadyLoaded = (currentLoadedId == video.id || (uiState as? PlayerUiState.Success)?.details?.video?.id == video.id) &&
+            exoPlayer.playbackState != Player.STATE_IDLE
+        if (!isAlreadyLoaded) {
+            viewModel.loadVideo(video)
+        }
         selectedQuality = "Auto"
         areControlsVisible = true
         lastInteractionTime = System.currentTimeMillis()
     }
 
-    // Factory HTTP DataSource dengan User-Agent & Referer YouTube resmi anti-403
+    // DINONAKTIFKAN: Origin header yang menyebabkan Google CDN (googlevideo.com) menolak stream dengan HTTP 403 Forbidden
+    // val httpDataSourceFactory = remember {
+    //     DefaultHttpDataSource.Factory()
+    //         .setUserAgent(NewPipeDownloader.DEFAULT_USER_AGENT)
+    //         .setAllowCrossProtocolRedirects(true)
+    //         .setConnectTimeoutMs(15000)
+    //         .setReadTimeoutMs(20000)
+    //         .setDefaultRequestProperties(
+    //             mapOf(
+    //                 "Referer" to "https://www.youtube.com/",
+    //                 "Origin" to "https://www.youtube.com"
+    //             )
+    //         )
+    // }
+    // BARU: Request properties bersih dengan Referer YouTube tanpa Origin header agar CDN video googlevideo.com tidak mengembalikan 403
     val httpDataSourceFactory = remember {
         DefaultHttpDataSource.Factory()
             .setUserAgent(NewPipeDownloader.DEFAULT_USER_AGENT)
@@ -328,16 +368,15 @@ fun PlayerScreen(
             .setReadTimeoutMs(20000)
             .setDefaultRequestProperties(
                 mapOf(
-                    "Referer" to "https://www.youtube.com/",
-                    "Origin" to "https://www.youtube.com"
+                    "Referer" to "https://www.youtube.com/"
                 )
             )
     }
 
-    // ExoPlayer instance bersama dari ViewModel agar pemutaran terus berjalan lancar di Miniplayer
-    val exoPlayer = remember(context) {
-        viewModel.getOrCreateExoPlayer(context)
-    }
+    // DINONAKTIFKAN: Deklarasi exoPlayer di posisi bawah sudah dipindahkan ke atas sebelum isBuffering
+    // val exoPlayer = remember(context) {
+    //     viewModel.getOrCreateExoPlayer(context)
+    // }
 
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
@@ -401,32 +440,126 @@ fun PlayerScreen(
 
     // Eksekusi pemutaran saat detail stream berhasil diekstrak
     val successDetails = (uiState as? PlayerUiState.Success)?.details
+    // DINONAKTIFKAN: LaunchedEffect(successDetails) lama yang selalu memanggil exoPlayer.stop() dan memprioritaskan HLS untuk semua video
+    // LaunchedEffect(successDetails) {
+    //     if (successDetails != null) {
+    //         playbackError = null
+    //         isBuffering = true
+    //
+    //         val mediaSource: MediaSource? = try {
+    //             when {
+    //                 !successDetails.hlsUrl.isNullOrBlank() -> {
+    //                     val uri = successDetails.hlsUrl.removeSuffix("?")
+    //                     HlsMediaSource.Factory(httpDataSourceFactory)
+    //                         .createMediaSource(MediaItem.fromUri(uri))
+    //                 }
+    //                 successDetails.isProgressiveMuxed && !successDetails.videoUrl.isNullOrBlank() -> {
+    //                     ProgressiveMediaSource.Factory(httpDataSourceFactory)
+    //                         .createMediaSource(MediaItem.fromUri(successDetails.videoUrl))
+    //                 }
+    //                 !successDetails.videoUrl.isNullOrBlank() && !successDetails.audioUrl.isNullOrBlank() -> {
+    //                     val vSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
+    //                         .createMediaSource(MediaItem.fromUri(successDetails.videoUrl))
+    //                     val aSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
+    //                         .createMediaSource(MediaItem.fromUri(successDetails.audioUrl))
+    //                     MergingMediaSource(vSource, aSource)
+    //                 }
+    //                 !successDetails.videoUrl.isNullOrBlank() -> {
+    //                     ProgressiveMediaSource.Factory(httpDataSourceFactory)
+    //                         .createMediaSource(MediaItem.fromUri(successDetails.videoUrl))
+    //                 }
+    //                 else -> null
+    //             }
+    //         } catch (e: Exception) {
+    //             playbackError = e.localizedMessage ?: "Gagal memproses stream video."
+    //             null
+    //         }
+    //
+    //         if (mediaSource != null) {
+    //             exoPlayer.stop()
+    //             exoPlayer.clearMediaItems()
+    //             exoPlayer.setMediaSource(mediaSource)
+    //             exoPlayer.prepare()
+    //             exoPlayer.play()
+    //         } else if (playbackError == null) {
+    //             playbackError = "Tidak ada stream pemutaran yang kompatibel."
+    //             isBuffering = false
+    //         }
+    //     }
+    // }
+    // BARU: Eksekusi pemutaran cerdas:
+    // 1. Cek apakah video aktif sudah berputar di ExoPlayer (saat expand dari MiniPlayerBar). Jika ya, jangan reset media item!
+    // 2. Prioritaskan Progressive / MergingMediaSource untuk video VOD biasa (termasuk video kompilasi panjang) dan hanya gunakan HLS jika isLive true.
+    // 3. Sertakan setMediaId(video.id) agar ExoPlayer dapat mengenali identitas media aktif secara persis.
     LaunchedEffect(successDetails) {
         if (successDetails != null) {
+            val currentLoadedId = exoPlayer.currentMediaItem?.mediaId
+            val isSameMediaActive = (currentLoadedId == successDetails.video.id) &&
+                exoPlayer.playbackState != Player.STATE_IDLE
+            if (isSameMediaActive) {
+                isBuffering = exoPlayer.playbackState == Player.STATE_BUFFERING
+                playbackError = null
+                return@LaunchedEffect
+            }
+
             playbackError = null
             isBuffering = true
 
             val mediaSource: MediaSource? = try {
                 when {
-                    !successDetails.hlsUrl.isNullOrBlank() -> {
+                    // Hanya gunakan HLS untuk siaran langsung (Live Stream)
+                    successDetails.isLive && !successDetails.hlsUrl.isNullOrBlank() -> {
                         val uri = successDetails.hlsUrl.removeSuffix("?")
+                        val item = MediaItem.Builder()
+                            .setUri(uri)
+                            .setMediaId(successDetails.video.id)
+                            .build()
                         HlsMediaSource.Factory(httpDataSourceFactory)
-                            .createMediaSource(MediaItem.fromUri(uri))
+                            .createMediaSource(item)
                     }
+                    // Jika ada stream progressive muxed (video + audio dalam satu stream)
                     successDetails.isProgressiveMuxed && !successDetails.videoUrl.isNullOrBlank() -> {
+                        val item = MediaItem.Builder()
+                            .setUri(successDetails.videoUrl)
+                            .setMediaId(successDetails.video.id)
+                            .build()
                         ProgressiveMediaSource.Factory(httpDataSourceFactory)
-                            .createMediaSource(MediaItem.fromUri(successDetails.videoUrl))
+                            .createMediaSource(item)
                     }
+                    // Video VOD standar YouTube (videoOnly + audio digabung via MergingMediaSource)
                     !successDetails.videoUrl.isNullOrBlank() && !successDetails.audioUrl.isNullOrBlank() -> {
+                        val vItem = MediaItem.Builder()
+                            .setUri(successDetails.videoUrl)
+                            .setMediaId(successDetails.video.id)
+                            .build()
+                        val aItem = MediaItem.Builder()
+                            .setUri(successDetails.audioUrl)
+                            .setMediaId("${successDetails.video.id}_audio")
+                            .build()
                         val vSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
-                            .createMediaSource(MediaItem.fromUri(successDetails.videoUrl))
+                            .createMediaSource(vItem)
                         val aSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
-                            .createMediaSource(MediaItem.fromUri(successDetails.audioUrl))
+                            .createMediaSource(aItem)
                         MergingMediaSource(vSource, aSource)
                     }
+                    // Fallback jika hanya ada video stream
                     !successDetails.videoUrl.isNullOrBlank() -> {
+                        val item = MediaItem.Builder()
+                            .setUri(successDetails.videoUrl)
+                            .setMediaId(successDetails.video.id)
+                            .build()
                         ProgressiveMediaSource.Factory(httpDataSourceFactory)
-                            .createMediaSource(MediaItem.fromUri(successDetails.videoUrl))
+                            .createMediaSource(item)
+                    }
+                    // Fallback HLS terakhir jika progressive tidak tersedia sama sekali
+                    !successDetails.hlsUrl.isNullOrBlank() -> {
+                        val uri = successDetails.hlsUrl.removeSuffix("?")
+                        val item = MediaItem.Builder()
+                            .setUri(uri)
+                            .setMediaId(successDetails.video.id)
+                            .build()
+                        HlsMediaSource.Factory(httpDataSourceFactory)
+                            .createMediaSource(item)
                     }
                     else -> null
                 }
@@ -480,15 +613,44 @@ fun PlayerScreen(
         val directStreamUrl = successDetails?.resolutionStreams?.get(quality)
             ?: successDetails?.resolutionStreams?.get("${resNumber}p")
 
-        if (directStreamUrl != null && successDetails?.hlsUrl.isNullOrBlank()) {
+        // DINONAKTIFKAN: Pengecekan successDetails?.hlsUrl.isNullOrBlank() yang keliru untuk video VOD biasa
+        // if (directStreamUrl != null && successDetails?.hlsUrl.isNullOrBlank()) {
+        //     try {
+        //         val curPos = exoPlayer.currentPosition
+        //         val wasPlaying = exoPlayer.isPlaying
+        //         val vSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
+        //             .createMediaSource(MediaItem.fromUri(directStreamUrl))
+        //         val newSource = if (!successDetails?.audioUrl.isNullOrBlank()) {
+        //             val aSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
+        //                 .createMediaSource(MediaItem.fromUri(successDetails.audioUrl))
+        //             MergingMediaSource(vSource, aSource)
+        //         } else {
+        //             vSource
+        //         }
+        //         exoPlayer.setMediaSource(newSource)
+        //         exoPlayer.prepare()
+        //         exoPlayer.seekTo(curPos)
+        //         if (wasPlaying) exoPlayer.play()
+        //     } catch (_: Exception) {}
+        // }
+        // BARU: Terapkan resolusi manual untuk semua video non-live (VOD) dengan menyertakan mediaId
+        if (directStreamUrl != null && (successDetails?.isLive != true)) {
             try {
                 val curPos = exoPlayer.currentPosition
                 val wasPlaying = exoPlayer.isPlaying
+                val vItem = MediaItem.Builder()
+                    .setUri(directStreamUrl)
+                    .setMediaId(successDetails?.video?.id ?: "")
+                    .build()
                 val vSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
-                    .createMediaSource(MediaItem.fromUri(directStreamUrl))
+                    .createMediaSource(vItem)
                 val newSource = if (!successDetails?.audioUrl.isNullOrBlank()) {
+                    val aItem = MediaItem.Builder()
+                        .setUri(successDetails.audioUrl)
+                        .setMediaId("${successDetails.video.id}_audio")
+                        .build()
                     val aSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
-                        .createMediaSource(MediaItem.fromUri(successDetails.audioUrl))
+                        .createMediaSource(aItem)
                     MergingMediaSource(vSource, aSource)
                 } else {
                     vSource
@@ -596,6 +758,7 @@ fun PlayerScreen(
                                 .background(PolarCyan)
                                 .clickable {
                                     playbackError = null
+                                    isBuffering = true
                                     viewModel.loadVideo(currentVideo)
                                 }
                                 .padding(horizontal = 16.dp, vertical = 8.dp)

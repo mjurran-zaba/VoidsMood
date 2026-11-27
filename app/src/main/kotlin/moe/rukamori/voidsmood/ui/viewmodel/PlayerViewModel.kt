@@ -98,10 +98,23 @@ class PlayerViewModel : ViewModel() {
         }
     }
 
+    // DINONAKTIFKAN: openVideo yang selalu memanggil loadVideo(video) tanpa mengecek apakah video yang sama sudah aktif
+    // fun openVideo(video: VideoItem) {
+    //     _activeVideo.value = video
+    //     _playerMode.value = PlayerMode.FULL
+    //     loadVideo(video)
+    // }
+    // BARU: Jika video yang dipilih sama dengan video yang sedang aktif dan player tidak IDLE,
+    // cukup ubah mode ke FULL tanpa me-reload agar video tidak terulang dari detik 0.
     fun openVideo(video: VideoItem) {
+        val isSameActive = _activeVideo.value?.id == video.id &&
+            exoPlayerInstance?.playbackState != Player.STATE_IDLE &&
+            exoPlayerInstance?.playbackState != null
         _activeVideo.value = video
         _playerMode.value = PlayerMode.FULL
-        loadVideo(video)
+        if (!isSameActive) {
+            loadVideo(video)
+        }
     }
 
     fun minimizePlayer() {

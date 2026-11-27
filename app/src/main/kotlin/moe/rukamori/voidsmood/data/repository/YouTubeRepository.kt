@@ -8,6 +8,7 @@ import moe.rukamori.voidsmood.data.model.VideoPlaybackDetails
 import moe.rukamori.voidsmood.data.network.NewPipeDownloader
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.schabi.newpipe.extractor.MediaFormat
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.kiosk.KioskInfo
@@ -16,6 +17,7 @@ import org.schabi.newpipe.extractor.localization.Localization
 import org.schabi.newpipe.extractor.search.SearchInfo
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
+import org.schabi.newpipe.extractor.stream.StreamType
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
@@ -312,24 +314,54 @@ object YouTubeRepository {
                 listOf("Auto", "1080p", "720p", "480p", "360p", "240p", "144p")
             }
 
-            // Cari stream video progressive (video + audio muxed) jika tersedia
+            // DINONAKTIFKAN: Pemilihan stream videoOnly dan audio lama yang rentan memilih AV1 / 4K pada kompilasi video panjang
+            // // Cari stream video progressive (video + audio muxed) jika tersedia
+            // val muxedProgressive = info.videoStreams
+            //     ?.filter { !it.isVideoOnly }
+            //     ?.maxByOrNull { it.height }
+            //
+            // // Cari video-only stream terbaik (720p atau 480p ideal untuk hardware ARMv7 Infinix)
+            // val videoOnlyStream = info.videoOnlyStreams
+            //     ?.firstOrNull { it.resolution == "720p" }
+            //     ?: info.videoOnlyStreams?.firstOrNull { it.resolution == "480p" }
+            //     ?: info.videoOnlyStreams?.firstOrNull { it.resolution == "360p" }
+            //     ?: info.videoOnlyStreams?.firstOrNull()
+            //
+            // val selectedVideoUrl = muxedProgressive?.url ?: videoOnlyStream?.url
+            //
+            // // Cari stream audio dengan bitrate optimal
+            // val selectedAudioUrl = info.audioStreams
+            //     ?.maxByOrNull { it.averageBitrate }
+            //     ?.url
+            //     ?: info.audioStreams?.firstOrNull()?.url
+            // BARU: Ekstraksi stream video dan audio yang dioptimalkan untuk kompatibilitas perangkat ARMv7 (Infinix dsb.)
+            // Memprioritaskan MP4/AVC (H.264) untuk video dan M4A/AAC untuk audio, mencegah error decoder pada video panjang/kompilasi
             val muxedProgressive = info.videoStreams
                 ?.filter { !it.isVideoOnly }
                 ?.maxByOrNull { it.height }
 
-            // Cari video-only stream terbaik (720p atau 480p ideal untuk hardware ARMv7 Infinix)
-            val videoOnlyStream = info.videoOnlyStreams
-                ?.firstOrNull { it.resolution == "720p" }
-                ?: info.videoOnlyStreams?.firstOrNull { it.resolution == "480p" }
-                ?: info.videoOnlyStreams?.firstOrNull { it.resolution == "360p" }
+            val mp4VideoOnlyStreams = info.videoOnlyStreams?.filter { s ->
+                s.format == MediaFormat.MPEG_4 || s.codec?.startsWith("avc", ignoreCase = true) == true
+            }
+
+            val videoOnlyStream = mp4VideoOnlyStreams?.firstOrNull { it.height in 700..750 || it.resolution?.startsWith("720") == true }
+                ?: mp4VideoOnlyStreams?.firstOrNull { it.height in 460..500 || it.resolution?.startsWith("480") == true }
+                ?: mp4VideoOnlyStreams?.firstOrNull { it.height in 340..380 || it.resolution?.startsWith("360") == true }
+                ?: mp4VideoOnlyStreams?.firstOrNull { it.height in 1000..1100 || it.resolution?.startsWith("1080") == true }
+                ?: mp4VideoOnlyStreams?.firstOrNull()
+                ?: info.videoOnlyStreams?.firstOrNull { it.height in 700..750 || it.resolution?.startsWith("720") == true }
+                ?: info.videoOnlyStreams?.firstOrNull { it.height in 460..500 || it.resolution?.startsWith("480") == true }
+                ?: info.videoOnlyStreams?.firstOrNull { it.height in 340..380 || it.resolution?.startsWith("360") == true }
                 ?: info.videoOnlyStreams?.firstOrNull()
 
             val selectedVideoUrl = muxedProgressive?.url ?: videoOnlyStream?.url
 
-            // Cari stream audio dengan bitrate optimal
+            // Cari stream audio dengan bitrate optimal (prioritaskan format M4A/AAC untuk hardware decoder Android universal)
             val selectedAudioUrl = info.audioStreams
+                ?.filter { it.format == MediaFormat.M4A || it.codec?.contains("mp4a", ignoreCase = true) == true }
                 ?.maxByOrNull { it.averageBitrate }
                 ?.url
+                ?: info.audioStreams?.maxByOrNull { it.averageBitrate }?.url
                 ?: info.audioStreams?.firstOrNull()?.url
 
             val related = info.relatedItems
@@ -356,13 +388,20 @@ object YouTubeRepository {
             // BARU: Pembersihan teks deskripsi video secara menyeluruh dari tag HTML <br>, <p>, anchor, dan entitas HTML
             val cleanDescription = cleanHtmlDescription(info.description?.content ?: "")
 
+            // DINONAKTIFKAN: isLive = !info.hlsUrl.isNullOrBlank()
+            // Menandai video sebagai live hanya berdasarkan keberadaan hlsUrl keliru karena YouTube juga menyediakannya pada VOD,
+            // sehingga memaksa player memutar HLS yang ditolak 403 oleh YouTube.
+            // isLive = !info.hlsUrl.isNullOrBlank(),
+            // BARU: Penentuan status Live streaming sejati berdasarkan StreamType dari NewPipeExtractor
+            val isLiveStream = info.streamType == StreamType.LIVE_STREAM
+
             val details = VideoPlaybackDetails(
                 video = baseVideo,
                 hlsUrl = cleanHls,
                 videoUrl = selectedVideoUrl,
                 audioUrl = selectedAudioUrl,
                 isProgressiveMuxed = (muxedProgressive != null),
-                isLive = !info.hlsUrl.isNullOrBlank(),
+                isLive = isLiveStream,
                 description = cleanDescription,
                 subscriberCountText = if (info.uploaderSubscriberCount > 0) "${VideoItem.formatCount(info.uploaderSubscriberCount)} subscriber" else "",
                 likeCountText = if (info.likeCount > 0) VideoItem.formatCount(info.likeCount) else "Suka",

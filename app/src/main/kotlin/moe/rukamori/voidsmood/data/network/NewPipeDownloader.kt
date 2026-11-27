@@ -40,9 +40,13 @@ class NewPipeDownloader(
             .url(url)
 
         var hasUserAgent = false
+        var existingCookieHeader: String? = null
         headers.forEach { (headerName, headerValueList) ->
             if (headerName.equals("User-Agent", ignoreCase = true) && headerValueList.isNotEmpty()) {
                 hasUserAgent = true
+            }
+            if (headerName.equals("Cookie", ignoreCase = true) && headerValueList.isNotEmpty()) {
+                existingCookieHeader = headerValueList.joinToString("; ")
             }
 
             if (headerValueList.size > 1) {
@@ -57,6 +61,24 @@ class NewPipeDownloader(
 
         if (!hasUserAgent) {
             requestBuilder.header("User-Agent", DEFAULT_USER_AGENT)
+        }
+
+        // DINONAKTIFKAN: Request tanpa injeksi cookie persetujuan SOCS YouTube
+        // Request ke domain YouTube tanpa cookie SOCS sering dicegat oleh popup GDPR/persetujuan bot,
+        // menyebabkan ekstraksi video kompilasi/mix panjang gagal ("unavailable to play").
+        // BARU: Suntikkan cookie SOCS=CAISAiAD untuk permintaan YouTube guna melewati bot check dan gerbang persetujuan mix
+        if (url.contains("youtube.com")) {
+            val cookies = buildList {
+                if (!existingCookieHeader.isNullOrBlank()) {
+                    add(existingCookieHeader!!)
+                }
+                if (existingCookieHeader?.contains("SOCS=") != true) {
+                    add("SOCS=CAISAiAD")
+                }
+            }.joinToString("; ")
+            if (cookies.isNotBlank()) {
+                requestBuilder.header("Cookie", cookies)
+            }
         }
 
         val response = client.newCall(requestBuilder.build()).execute()
