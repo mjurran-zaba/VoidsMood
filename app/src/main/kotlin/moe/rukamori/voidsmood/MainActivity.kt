@@ -63,6 +63,7 @@ import moe.rukamori.voidsmood.data.repository.YouTubeRepository
 import moe.rukamori.voidsmood.ui.components.AppleBottomNavigationBar
 import moe.rukamori.voidsmood.ui.components.MiniPlayerBar
 import moe.rukamori.voidsmood.ui.components.NavigationTab
+import moe.rukamori.voidsmood.ui.components.SearchTopAppBar
 import moe.rukamori.voidsmood.ui.components.VoidsTopAppBar
 import moe.rukamori.voidsmood.ui.screens.ExploreScreen
 import moe.rukamori.voidsmood.ui.screens.HomeScreen
@@ -173,7 +174,7 @@ class MainActivity : ComponentActivity() {
 
                 // BARU: Jika pengguna sedang melihat hasil pencarian di tab HOME, tombol Back mengembalikan ke feed Beranda terlebih dahulu
                 BackHandler(enabled = currentTab == NavigationTab.HOME && isHomeSearching && !isSearchActive && playerMode != PlayerMode.FULL) {
-                    homeViewModel.loadTrending(forceReload = false)
+                    homeViewModel.clearSearch()
                 }
 
                 // DINONAKTIFKAN: Belum ada penanganan tombol Back saat berada di luar tab HOME sehingga aplikasi langsung keluar
@@ -216,16 +217,26 @@ class MainActivity : ComponentActivity() {
                                 topBar = {
                                     // Sembunyikan top bar bawaan pada tab Shorts agar pengalaman video reels vertikal 9:16 murni layar penuh
                                     if (currentTab != NavigationTab.SHORTS) {
-                                        VoidsTopAppBar(
-                                            onMenuClick = {
-                                                scope.launch {
-                                                    if (drawerState.isClosed) drawerState.open() else drawerState.close()
+                                        // BARU: Saat dalam mode hasil pencarian di tab HOME, tampilkan SearchTopAppBar resmi YouTube
+                                        if (currentTab == NavigationTab.HOME && isHomeSearching) {
+                                            SearchTopAppBar(
+                                                query = currentSearchQuery,
+                                                onBackClick = { homeViewModel.clearSearch() },
+                                                onSearchClick = { isSearchActive = true },
+                                                onClearClick = { homeViewModel.clearSearch() }
+                                            )
+                                        } else {
+                                            VoidsTopAppBar(
+                                                onMenuClick = {
+                                                    scope.launch {
+                                                        if (drawerState.isClosed) drawerState.open() else drawerState.close()
+                                                    }
+                                                },
+                                                onSearchClick = {
+                                                    isSearchActive = true
                                                 }
-                                            },
-                                            onSearchClick = {
-                                                isSearchActive = true
-                                            }
-                                        )
+                                            )
+                                        }
                                     }
                                 }
                             ) { innerPadding ->
@@ -250,6 +261,11 @@ class MainActivity : ComponentActivity() {
                                                 onVideoClick = { video ->
                                                     LocalLibraryRepository.addToHistory(video)
                                                     playerViewModel.openVideo(video)
+                                                },
+                                                onShortClick = { shortVideo ->
+                                                    LocalLibraryRepository.addToHistory(shortVideo)
+                                                    shortsViewModel.playShortVideo(shortVideo, homeViewModel.homeShorts.value)
+                                                    currentTab = NavigationTab.SHORTS
                                                 }
                                             )
                                         }

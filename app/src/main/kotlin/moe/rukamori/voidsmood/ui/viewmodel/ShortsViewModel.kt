@@ -65,6 +65,14 @@ class ShortsViewModel : ViewModel() {
     // memungkinkan PlayerView hanya terpasang jika mediaId ExoPlayer sudah cocok dengan halaman yang aktif
     private val _currentPlayingVideoId = MutableStateFlow<String?>(null)
     val currentPlayingVideoId: StateFlow<String?> = _currentPlayingVideoId.asStateFlow()
+
+    // BARU: State target scroll page untuk mengarahkan pager saat Shorts dibuka dari Beranda / Pencarian
+    private val _targetScrollPage = MutableStateFlow<Int?>(null)
+    val targetScrollPage: StateFlow<Int?> = _targetScrollPage.asStateFlow()
+
+    fun clearTargetScrollPage() {
+        _targetScrollPage.value = null
+    }
     private var pageOffset = 1
     private var appContext: Context? = null
 
@@ -177,6 +185,31 @@ class ShortsViewModel : ViewModel() {
                 _isLoadingMore.value = false
             }
         }
+    }
+
+    // BARU: Membuka dan memutar video Shorts spesifik (misal dari rak Shorts Beranda atau hasil Pencarian)
+    // dan mengarahkan Pager ke video tersebut di layar penuh
+    fun playShortVideo(video: VideoItem, contextList: List<VideoItem> = emptyList()) {
+        val currentList = _shorts.value.toMutableList()
+        var targetIndex = currentList.indexOfFirst { it.id == video.id }
+
+        if (targetIndex == -1) {
+            if (contextList.isNotEmpty()) {
+                val combined = (listOf(video) + contextList + currentList).distinctBy { it.id }
+                _shorts.value = combined
+                _uiState.value = ShortsUiState.Success(combined)
+                targetIndex = 0
+            } else {
+                currentList.add(0, video)
+                _shorts.value = currentList
+                _uiState.value = ShortsUiState.Success(currentList)
+                targetIndex = 0
+            }
+        }
+
+        _currentPage.value = targetIndex
+        _targetScrollPage.value = targetIndex
+        playShortAt(targetIndex)
     }
 
     fun playShortAt(index: Int) {

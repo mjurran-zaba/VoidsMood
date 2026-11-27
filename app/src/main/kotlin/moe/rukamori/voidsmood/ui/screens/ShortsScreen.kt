@@ -230,6 +230,18 @@ fun ShortsScreen(
                     }
                 }
 
+                // BARU: Gulir Pager ke halaman target jika Shorts dibuka secara spesifik dari Beranda atau Pencarian
+                val targetScrollPage by viewModel.targetScrollPage.collectAsState()
+                LaunchedEffect(targetScrollPage) {
+                    val target = targetScrollPage
+                    if (target != null && target in 0 until shortsList.size) {
+                        try {
+                            pagerState.scrollToPage(target)
+                        } catch (_: Exception) {}
+                        viewModel.clearTargetScrollPage()
+                    }
+                }
+
                 // DINONAKTIFKAN: LaunchedEffect(pagerState.currentPage) yang memicu play saat halaman masih bergeser di tengah gestur
                 // LaunchedEffect(pagerState.currentPage) {
                 //     if (shortsList.isNotEmpty()) {

@@ -41,6 +41,10 @@ class HomeViewModel : ViewModel() {
     private val _homeShorts = MutableStateFlow<List<VideoItem>>(emptyList())
     val homeShorts: StateFlow<List<VideoItem>> = _homeShorts.asStateFlow()
 
+    // BARU: Daftar Shorts hasil pencarian untuk mengisi filter kategori 'Shorts' saat pencarian aktif
+    private val _searchShorts = MutableStateFlow<List<VideoItem>>(emptyList())
+    val searchShorts: StateFlow<List<VideoItem>> = _searchShorts.asStateFlow()
+
     private var pageOffset = 0
     private var currentVideos = mutableListOf<VideoItem>()
 
@@ -185,12 +189,33 @@ class HomeViewModel : ViewModel() {
         }
     }
 
+    // DINONAKTIFKAN: search lama tanpa pengambilan data shorts hasil pencarian
+    // fun search(query: String) {
+    //     if (query.isBlank()) {
+    //         loadTrending()
+    //         return
+    //     }
+    //     _uiState.value = HomeUiState.Loading
+    //     viewModelScope.launch(Dispatchers.IO) {
+    //         val result = YouTubeRepository.searchVideos(query)
+    //         result.onSuccess { items ->
+    //             currentVideos = items.toMutableList()
+    //             _uiState.value = HomeUiState.Success(videos = currentVideos.toList(), isSearching = true, query = query)
+    //         }.onFailure { error ->
+    //             _uiState.value = HomeUiState.Error(
+    //                 error.localizedMessage ?: "Pencarian '$query' gagal. Coba lagi."
+    //             )
+    //         }
+    //     }
+    // }
+    // BARU: Pencarian video utama + pra-unduh video Shorts hasil pencarian secara terpadu
     fun search(query: String) {
         if (query.isBlank()) {
-            loadTrending()
+            clearSearch()
             return
         }
         _uiState.value = HomeUiState.Loading
+        _searchShorts.value = emptyList()
         viewModelScope.launch(Dispatchers.IO) {
             val result = YouTubeRepository.searchVideos(query)
             result.onSuccess { items ->
@@ -201,6 +226,18 @@ class HomeViewModel : ViewModel() {
                     error.localizedMessage ?: "Pencarian '$query' gagal. Coba lagi."
                 )
             }
+
+            // Ambil Shorts hasil pencarian agar filter kategori 'Shorts' terisi video asli
+            val shortsResult = YouTubeRepository.searchShorts(query)
+            shortsResult.onSuccess { sItems ->
+                _searchShorts.value = sItems
+            }
         }
+    }
+
+    // BARU: Fungsi untuk mereset status pencarian dan mengembalikan feed ke Beranda secara bersih
+    fun clearSearch() {
+        _searchShorts.value = emptyList()
+        loadTrending()
     }
 }

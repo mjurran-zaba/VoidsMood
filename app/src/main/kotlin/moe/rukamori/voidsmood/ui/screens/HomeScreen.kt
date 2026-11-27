@@ -67,6 +67,7 @@ import moe.rukamori.voidsmood.ui.viewmodel.HomeViewModel
 fun HomeScreen(
     viewModel: HomeViewModel,
     onVideoClick: (VideoItem) -> Unit = {},
+    onShortClick: (VideoItem) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -95,7 +96,8 @@ fun HomeScreen(
                     query = state.query,
                     viewModel = viewModel,
                     onVideoClick = onVideoClick,
-                    onClearSearch = { viewModel.loadTrending() }
+                    onShortClick = onShortClick,
+                    onClearSearch = { viewModel.clearSearch() }
                 )
             }
         }
@@ -111,12 +113,14 @@ private fun SuccessFeedView(
     query: String,
     viewModel: HomeViewModel,
     onVideoClick: (VideoItem) -> Unit,
+    onShortClick: (VideoItem) -> Unit,
     onClearSearch: () -> Unit
 ) {
     val listState = rememberLazyListState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
     val selectedTopic by viewModel.selectedTopic.collectAsState()
     val homeShorts by viewModel.homeShorts.collectAsState()
+    val searchShorts by viewModel.searchShorts.collectAsState()
 
     var selectedFilter by remember { mutableStateOf("Semua") }
     val filterOptions = listOf("Semua", "Video", "Shorts")
@@ -125,12 +129,24 @@ private fun SuccessFeedView(
         listOf("Semua", "Musik", "Gaming", "Podcast", "Sains & Teknologi", "Berita", "Animasi", "Otomotif")
     }
 
-    val displayedVideos = remember(videos, isSearching, selectedFilter) {
+    // DINONAKTIFKAN: displayedVideos lama yang hanya memfilter in-memory durasi <= 90 detik sehingga hasil filter Shorts kosong
+    // val displayedVideos = remember(videos, isSearching, selectedFilter) {
+    //     if (!isSearching) videos
+    //     else {
+    //         when (selectedFilter) {
+    //             "Video" -> videos.filter { it.durationSeconds > 90L || it.durationSeconds <= 0L }
+    //             "Shorts" -> videos.filter { it.durationSeconds in 1..90L }
+    //             else -> videos
+    //         }
+    //     }
+    // }
+    // BARU: displayedVideos yang memanfaatkan searchShorts asli dari YouTube sehingga filter 'Shorts' tidak kosong
+    val displayedVideos = remember(videos, searchShorts, isSearching, selectedFilter) {
         if (!isSearching) videos
         else {
             when (selectedFilter) {
                 "Video" -> videos.filter { it.durationSeconds > 90L || it.durationSeconds <= 0L }
-                "Shorts" -> videos.filter { it.durationSeconds in 1..90L }
+                "Shorts" -> searchShorts.ifEmpty { videos.filter { it.durationSeconds in 1..90L } }
                 else -> videos
             }
         }
@@ -210,37 +226,38 @@ private fun SuccessFeedView(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Hasil: \"$query\"",
-                            color = IceWhite,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                    // DINONAKTIFKAN: Label teks "Hasil: ..." dan tombol "Kembali ke Beranda" yang tidak perlu dan mengacaukan antarmuka murni
+                    // Row(
+                    //     modifier = Modifier
+                    //         .fillMaxWidth()
+                    //         .padding(vertical = 4.dp),
+                    //     horizontalArrangement = Arrangement.SpaceBetween,
+                    //     verticalAlignment = Alignment.CenterVertically
+                    // ) {
+                    //     Text(
+                    //         text = "Hasil: \"$query\"",
+                    //         color = IceWhite,
+                    //         fontSize = 16.sp,
+                    //         fontWeight = FontWeight.Bold
+                    //     )
+                    //
+                    //     Box(
+                    //         modifier = Modifier
+                    //             .clip(RoundedCornerShape(14.dp))
+                    //             .background(Color(0xFF1E222D))
+                    //             .clickable(onClick = onClearSearch)
+                    //             .padding(horizontal = 12.dp, vertical = 6.dp)
+                    //     ) {
+                    //         Text(
+                    //             text = "Kembali ke Beranda",
+                    //             color = PolarCyan,
+                    //             fontSize = 12.sp,
+                    //             fontWeight = FontWeight.SemiBold
+                    //         )
+                    //     }
+                    // }
 
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(Color(0xFF1E222D))
-                                .clickable(onClick = onClearSearch)
-                                .padding(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = "Kembali ke Beranda",
-                                color = PolarCyan,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-
-                    // BARU: Bilah Kapsul Filter (Semua, Video, Shorts) tanpa emoji
+                    // BARU: Bilah Kapsul Filter murni (Semua, Video, Shorts) standar YouTube tanpa teks label tambahan
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -330,9 +347,15 @@ private fun SuccessFeedView(
                             items = homeShorts,
                             key = { "shelf_${it.id}" }
                         ) { shortItem ->
+                            // DINONAKTIFKAN: onClick = { onVideoClick(shortItem) } yang membuka player video biasa horizontal
+                            // ShortsShelfCard(
+                            //     short = shortItem,
+                            //     onClick = { onVideoClick(shortItem) }
+                            // )
+                            // BARU: onShortClick(shortItem) yang membuka pemutar Shorts vertikal layar penuh
                             ShortsShelfCard(
                                 short = shortItem,
-                                onClick = { onVideoClick(shortItem) }
+                                onClick = { onShortClick(shortItem) }
                             )
                         }
                     }
@@ -355,7 +378,13 @@ private fun SuccessFeedView(
             ) { video ->
                 VideoCard(
                     video = video,
-                    onVideoClick = onVideoClick
+                    onVideoClick = { clickedVideo ->
+                        if (selectedFilter == "Shorts") {
+                            onShortClick(clickedVideo)
+                        } else {
+                            onVideoClick(clickedVideo)
+                        }
+                    }
                 )
             }
         }

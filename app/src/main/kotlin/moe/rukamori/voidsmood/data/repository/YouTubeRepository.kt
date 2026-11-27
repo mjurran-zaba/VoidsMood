@@ -476,6 +476,49 @@ object YouTubeRepository {
         }
     }
 
+    // BARU: Pencarian khusus konten Shorts / Reels untuk kueri pencarian tertentu.
+    // Memanfaatkan InnerTube MWEB search untuk mengekstrak videoWithContextRenderer & shortsLockupViewModel
+    // sehingga menghasilkan daftar video pendek relevan dan mencegah filter 'Shorts' kosong.
+    suspend fun searchShorts(query: String): Result<List<VideoItem>> = withContext(Dispatchers.IO) {
+        try {
+            initIfNeeded()
+            val shortsQuery = if (query.contains("shorts", ignoreCase = true)) query else "$query shorts"
+            val mwebShorts = fetchShortsFromInnerTube(shortsQuery)
+            if (mwebShorts.isNotEmpty()) {
+                return@withContext Result.success(mwebShorts)
+            }
+            val service = ServiceList.YouTube
+            val searchExtractor = service.getSearchExtractor(shortsQuery)
+            searchExtractor.fetchPage()
+            val searchInfo = SearchInfo.getInfo(searchExtractor)
+            val fallbackShorts = searchInfo.relatedItems
+                .filterIsInstance<StreamInfoItem>()
+                .map { item ->
+                    val videoId = extractVideoId(item.url)
+                    val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+                    val avatar = item.uploaderAvatars.firstOrNull()?.url
+                    VideoItem(
+                        id = videoId,
+                        url = item.url,
+                        title = item.name ?: "Untitled",
+                        uploaderName = item.uploaderName ?: "Unknown Creator",
+                        uploaderAvatarUrl = avatar,
+                        thumbnailUrl = thumb,
+                        durationSeconds = item.duration,
+                        durationText = VideoItem.formatDuration(item.duration),
+                        viewCount = item.viewCount,
+                        viewCountText = VideoItem.formatViews(item.viewCount),
+                        uploadDateText = item.textualUploadDate ?: ""
+                    )
+                }
+                .filter { it.id.isNotBlank() && it.id.length == 11 }
+                .distinctBy { it.id }
+            Result.success(fallbackShorts)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     // DINONAKTIFKAN: getShortsFeed lama yang hanya mengambil 1 halaman awal dan terbatas 5-10 video
     // suspend fun getShortsFeed(refresh: Boolean = false): Result<List<VideoItem>> = withContext(Dispatchers.IO) {
     //     try {
