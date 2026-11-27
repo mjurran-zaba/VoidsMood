@@ -6,6 +6,7 @@ import kotlinx.coroutines.withContext
 import moe.rukamori.voidsmood.data.model.VideoItem
 import moe.rukamori.voidsmood.data.model.VideoPlaybackDetails
 import moe.rukamori.voidsmood.data.network.NewPipeDownloader
+import org.schabi.newpipe.extractor.InfoItem
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.kiosk.KioskInfo
@@ -19,6 +20,20 @@ object YouTubeRepository {
 
     @Volatile
     private var isInitialized = false
+
+    // BARU: Kumpulan seed topik dinamis agar feed YouTube kaya, beragam (50+ video),
+    // dan selalu berganti konten baru setiap kali ditarik untuk refresh (Pull-to-Refresh)
+    private val FEED_SEEDS = listOf(
+        "trending_gaming",
+        "video viral indonesia",
+        "trending_podcasts_episodes",
+        "musik indonesia populer",
+        "live",
+        "berita terkini terpopuler",
+        "gameplay indonesia"
+    )
+
+    private var currentSeedIndex = 0
 
     fun initIfNeeded() {
         if (!isInitialized) {
@@ -36,37 +51,76 @@ object YouTubeRepository {
         }
     }
 
-    suspend fun getTrendingVideos(): Result<List<VideoItem>> = withContext(Dispatchers.IO) {
+    private fun fetchItemsFromSeed(seed: String): List<VideoItem> {
+        val service = ServiceList.YouTube
+        val rawItems: List<Any> = try {
+            if (seed.startsWith("trending_") || seed == "live") {
+                val kioskList = service.kioskList
+                val extractor = kioskList.getExtractorById(seed, null)
+                extractor.fetchPage()
+                val info = KioskInfo.getInfo(extractor)
+                info.relatedItems
+            } else {
+                val searchExtractor = service.getSearchExtractor(seed)
+                searchExtractor.fetchPage()
+                val searchInfo = SearchInfo.getInfo(searchExtractor)
+                searchInfo.relatedItems
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+
+        return rawItems
+            .filterIsInstance<StreamInfoItem>()
+            .map { item ->
+                val videoId = item.url.substringAfter("v=").substringBefore("&")
+                val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+                val avatar = item.uploaderAvatars.firstOrNull()?.url
+                VideoItem(
+                    id = videoId,
+                    url = item.url,
+                    title = item.name ?: "Untitled",
+                    uploaderName = item.uploaderName ?: "Unknown Creator",
+                    uploaderAvatarUrl = avatar,
+                    thumbnailUrl = thumb,
+                    durationSeconds = item.duration,
+                    durationText = VideoItem.formatDuration(item.duration),
+                    viewCount = item.viewCount,
+                    viewCountText = VideoItem.formatViews(item.viewCount),
+                    uploadDateText = item.textualUploadDate ?: ""
+                )
+            }
+    }
+
+    suspend fun getTrendingVideos(refresh: Boolean = false): Result<List<VideoItem>> = withContext(Dispatchers.IO) {
         try {
             initIfNeeded()
-            val service = ServiceList.YouTube
-            val kioskList = service.kioskList
-            val defaultKiosk = kioskList.defaultKioskId ?: "Trending"
-            val extractor = kioskList.getExtractorById(defaultKiosk, null)
-            extractor.fetchPage()
-            val kioskInfo = KioskInfo.getInfo(extractor)
+            if (refresh) {
+                currentSeedIndex = (currentSeedIndex + 1) % FEED_SEEDS.size
+            }
 
-            val videoItems = kioskInfo.relatedItems
-                .filterIsInstance<StreamInfoItem>()
-                .map { item ->
-                    val videoId = item.url.substringAfter("v=").substringBefore("&")
-                    val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
-                    val avatar = item.uploaderAvatars.firstOrNull()?.url
-                    VideoItem(
-                        id = videoId,
-                        url = item.url,
-                        title = item.name ?: "Untitled",
-                        uploaderName = item.uploaderName ?: "Unknown Creator",
-                        uploaderAvatarUrl = avatar,
-                        thumbnailUrl = thumb,
-                        durationSeconds = item.duration,
-                        durationText = VideoItem.formatDuration(item.duration),
-                        viewCount = item.viewCount,
-                        viewCountText = VideoItem.formatViews(item.viewCount),
-                        uploadDateText = item.textualUploadDate ?: ""
-                    )
-                }
-            Result.success(videoItems)
+            val seed = FEED_SEEDS[currentSeedIndex]
+            var items = fetchItemsFromSeed(seed)
+
+            // Jika seed awal mengembalikan sedikit video, gabungkan dengan seed pendamping
+            if (items.size < 15) {
+                val backupSeed = FEED_SEEDS[(currentSeedIndex + 1) % FEED_SEEDS.size]
+                items = items + fetchItemsFromSeed(backupSeed)
+            }
+
+            Result.success(items)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // BARU: Fungsi pagination infinite scrolling untuk memuat batch video berikutnya saat di-scroll ke bawah
+    suspend fun loadMoreVideos(pageOffset: Int): Result<List<VideoItem>> = withContext(Dispatchers.IO) {
+        try {
+            initIfNeeded()
+            val nextSeed = FEED_SEEDS[(currentSeedIndex + pageOffset) % FEED_SEEDS.size]
+            val items = fetchItemsFromSeed(nextSeed)
+            Result.success(items)
         } catch (e: Exception) {
             Result.failure(e)
         }

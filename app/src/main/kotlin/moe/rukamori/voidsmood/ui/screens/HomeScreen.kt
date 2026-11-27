@@ -19,14 +19,19 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -57,7 +62,7 @@ fun HomeScreen(
     val uiState by viewModel.uiState.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
 
-    // Standar UX YouTube: Refresh konten murni dengan tarik ke bawah (Pull-to-Refresh)
+    // Pull-to-Refresh native Material 3: tarik ke bawah untuk refresh konten baru
     PullToRefreshBox(
         isRefreshing = isRefreshing,
         onRefresh = { viewModel.refreshTrending() },
@@ -78,6 +83,7 @@ fun HomeScreen(
                     videos = state.videos,
                     isSearching = state.isSearching,
                     query = state.query,
+                    viewModel = viewModel,
                     onVideoClick = onVideoClick,
                     onClearSearch = { viewModel.loadTrending() }
                 )
@@ -86,48 +92,58 @@ fun HomeScreen(
     }
 }
 
+// BARU: SuccessFeedView tanpa tulisan 'Sedang Tren' (murni feed video langsung mengalir dari atas)
+// Dilengkapi deteksi scroll untuk infinite scrolling pagination berkelanjutan
 @Composable
 private fun SuccessFeedView(
     videos: List<VideoItem>,
     isSearching: Boolean,
     query: String,
+    viewModel: HomeViewModel,
     onVideoClick: (VideoItem) -> Unit,
     onClearSearch: () -> Unit
 ) {
+    val listState = rememberLazyListState()
+    val isLoadingMore by viewModel.isLoadingMore.collectAsState()
+
+    // Deteksi saat pengguna mendekati akhir daftar (sisa 4 video) untuk memuat batch berikutnya
+    val shouldLoadMore by remember {
+        derivedStateOf {
+            val totalItems = listState.layoutInfo.totalItemsCount
+            val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            totalItems > 0 && lastVisibleItem >= totalItems - 4
+        }
+    }
+
+    LaunchedEffect(shouldLoadMore) {
+        if (shouldLoadMore && !isLoadingMore) {
+            viewModel.loadMore()
+        }
+    }
+
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        item {
-            // Header Bar: Mengikuti tata letak YouTube tanpa tombol reload aneh
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+        // Hanya tampilkan baris pencarian jika sedang dalam mode search
+        if (isSearching) {
+            item {
                 Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // DINONAKTIFKAN: Titik dekoratif cyan 6.dp (dilarang oleh aturan anti-slop)
-                    // Box(
-                    //     modifier = Modifier
-                    //         .size(6.dp)
-                    //         .clip(CircleShape)
-                    //         .background(PolarCyan)
-                    // )
-                    // BARU: Tipografi judul murni tanpa dot artifisial
                     Text(
-                        text = if (isSearching) "Hasil: \"$query\"" else "Sedang Tren",
+                        text = "Hasil: \"$query\"",
                         color = IceWhite,
-                        fontSize = 18.sp,
+                        fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
                     )
-                }
 
-                if (isSearching) {
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(14.dp))
@@ -136,7 +152,7 @@ private fun SuccessFeedView(
                             .padding(horizontal = 12.dp, vertical = 6.dp)
                     ) {
                         Text(
-                            text = "Kembali ke Tren",
+                            text = "Kembali ke Beranda",
                             color = PolarCyan,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
@@ -173,6 +189,24 @@ private fun SuccessFeedView(
             }
         }
 
+        // Indikator memuat video tambahan saat infinite scrolling
+        if (isLoadingMore) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        color = PolarCyan,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            }
+        }
+
         // Bottom Spacer untuk clearance Floating AppleBottomNavigationBar
         item {
             Spacer(modifier = Modifier.height(100.dp))
@@ -188,7 +222,6 @@ private fun LoadingFeedView() {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Skeleton placeholder cards hemat render
         repeat(3) {
             Box(
                 modifier = Modifier

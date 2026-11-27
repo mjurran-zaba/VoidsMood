@@ -29,16 +29,24 @@ class HomeViewModel : ViewModel() {
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
+    private val _isLoadingMore = MutableStateFlow(false)
+    val isLoadingMore: StateFlow<Boolean> = _isLoadingMore.asStateFlow()
+
+    private var pageOffset = 0
+    private var currentVideos = mutableListOf<VideoItem>()
+
     init {
         loadTrending()
     }
 
     fun loadTrending() {
         _uiState.value = HomeUiState.Loading
+        pageOffset = 0
         viewModelScope.launch(Dispatchers.IO) {
-            val result = YouTubeRepository.getTrendingVideos()
+            val result = YouTubeRepository.getTrendingVideos(refresh = false)
             result.onSuccess { items ->
-                _uiState.value = HomeUiState.Success(videos = items, isSearching = false)
+                currentVideos = items.toMutableList()
+                _uiState.value = HomeUiState.Success(videos = currentVideos.toList(), isSearching = false)
             }.onFailure { error ->
                 _uiState.value = HomeUiState.Error(
                     error.localizedMessage ?: "Gagal memuat feed YouTube. Cek koneksi internet."
@@ -47,14 +55,37 @@ class HomeViewModel : ViewModel() {
         }
     }
 
+    // BARU: Refresh cerdas yang mengambil pool video baru yang segar setiap kali ditarik
     fun refreshTrending() {
         viewModelScope.launch(Dispatchers.IO) {
             _isRefreshing.value = true
-            val result = YouTubeRepository.getTrendingVideos()
+            pageOffset = 0
+            val result = YouTubeRepository.getTrendingVideos(refresh = true)
             result.onSuccess { items ->
-                _uiState.value = HomeUiState.Success(videos = items, isSearching = false)
+                currentVideos = items.toMutableList()
+                _uiState.value = HomeUiState.Success(videos = currentVideos.toList(), isSearching = false)
             }
             _isRefreshing.value = false
+        }
+    }
+
+    // BARU: Infinite Scroll pagination yang memuat 30-50 video tambahan saat scroll ke bawah
+    fun loadMore() {
+        if (_isLoadingMore.value || _uiState.value !is HomeUiState.Success) return
+        val currentState = _uiState.value as HomeUiState.Success
+        if (currentState.isSearching) return
+
+        _isLoadingMore.value = true
+        pageOffset++
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = YouTubeRepository.loadMoreVideos(pageOffset)
+            result.onSuccess { newItems ->
+                if (newItems.isNotEmpty()) {
+                    currentVideos.addAll(newItems)
+                    _uiState.value = currentState.copy(videos = currentVideos.toList())
+                }
+            }
+            _isLoadingMore.value = false
         }
     }
 
@@ -67,7 +98,8 @@ class HomeViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             val result = YouTubeRepository.searchVideos(query)
             result.onSuccess { items ->
-                _uiState.value = HomeUiState.Success(videos = items, isSearching = true, query = query)
+                currentVideos = items.toMutableList()
+                _uiState.value = HomeUiState.Success(videos = currentVideos.toList(), isSearching = true, query = query)
             }.onFailure { error ->
                 _uiState.value = HomeUiState.Error(
                     error.localizedMessage ?: "Pencarian '$query' gagal. Coba lagi."

@@ -2,7 +2,6 @@
 package moe.rukamori.voidsmood.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,16 +31,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import moe.rukamori.voidsmood.ui.theme.GlassBorderSubtle
-import moe.rukamori.voidsmood.ui.theme.GlassSurface35
 import moe.rukamori.voidsmood.ui.theme.IceWhite
 import moe.rukamori.voidsmood.ui.theme.PolarCyan
+import moe.rukamori.voidsmood.ui.theme.PureBlack
 
+// BARU: TopAppBar Edge-to-Edge menyentuh batas layar tanpa margin mengapung,
+// dan tulisan 'VoidsMood' telah dihapus total sesuai instruksi user.
 @Composable
 fun VoidsTopAppBar(
     onMenuClick: () -> Unit,
@@ -56,35 +56,35 @@ fun VoidsTopAppBar(
         modifier = modifier
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.statusBars)
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .background(PureBlack)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .background(GlassSurface35)
-                .border(1.dp, GlassBorderSubtle, RoundedCornerShape(18.dp))
-                .padding(horizontal = 12.dp),
+                .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Left Drawer Toggle with Lucide Menu Icon (Touch target >= 48dp)
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .clickable(onClick = onMenuClick),
-                contentAlignment = Alignment.Center
-            ) {
-                LucideMenu(
-                    tint = IceWhite,
-                    size = 22.dp
-                )
-            }
-
             if (isSearchActive) {
-                // Search Input Field
+                // Tombol Kembali dari Pencarian
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .clickable {
+                            isSearchActive = false
+                            searchQuery = ""
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    LucideArrowLeft(
+                        tint = IceWhite,
+                        size = 22.dp
+                    )
+                }
+
+                // Input Pencarian Lebar Penuh
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -95,7 +95,7 @@ fun VoidsTopAppBar(
                         Text(
                             text = "Cari di YouTube...",
                             color = Color(0xFF6E7487),
-                            fontSize = 14.sp
+                            fontSize = 15.sp
                         )
                     }
                     BasicTextField(
@@ -104,7 +104,7 @@ fun VoidsTopAppBar(
                         singleLine = true,
                         textStyle = TextStyle(
                             color = IceWhite,
-                            fontSize = 14.sp,
+                            fontSize = 15.sp,
                             fontWeight = FontWeight.Medium
                         ),
                         cursorBrush = SolidColor(PolarCyan),
@@ -117,30 +117,25 @@ fun VoidsTopAppBar(
                     )
                 }
             } else {
-                // VoidsMood Brand Monolith
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
+                // Sisi Kiri: Ikon Menu Drawer (Touch target >= 48dp)
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onMenuClick),
+                    contentAlignment = Alignment.Center
                 ) {
-                    // DINONAKTIFKAN: Titik dekoratif cyan 8.dp di samping brand (dilarang oleh aturan anti-slop)
-                    // Box(
-                    //     modifier = Modifier
-                    //         .size(8.dp)
-                    //         .clip(CircleShape)
-                    //         .background(PolarCyan)
-                    // )
-                    // BARU: Tipografi brand bersih dan kokoh tanpa dot dekoratif
-                    Text(
-                        text = "VoidsMood",
-                        color = IceWhite,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.5.sp,
-                        fontFamily = FontFamily.SansSerif
+                    LucideMenu(
+                        tint = IceWhite,
+                        size = 22.dp
                     )
                 }
+
+                // Bagian Tengah: Kosong murni (tulisan VoidsMood dihapus sesuai instruksi)
+                Box(modifier = Modifier.weight(1f))
             }
 
-            // Search Toggle Button (Touch target >= 48dp)
+            // Sisi Kanan: Tombol Pencarian Edge-to-Edge
             Box(
                 modifier = Modifier
                     .size(48.dp)
@@ -148,6 +143,7 @@ fun VoidsTopAppBar(
                     .clickable {
                         if (isSearchActive) {
                             if (searchQuery.isNotBlank()) {
+                                keyboardController?.hide()
                                 onSearch(searchQuery)
                             } else {
                                 isSearchActive = false
@@ -160,7 +156,7 @@ fun VoidsTopAppBar(
             ) {
                 LucideSearch(
                     tint = if (isSearchActive) PolarCyan else IceWhite,
-                    size = 20.dp
+                    size = 21.dp
                 )
             }
         }

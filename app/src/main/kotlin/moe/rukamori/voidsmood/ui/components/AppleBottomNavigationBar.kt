@@ -11,7 +11,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -23,39 +22,48 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import moe.rukamori.voidsmood.ui.theme.IceWhite
-import moe.rukamori.voidsmood.ui.theme.PolarCyan
 import moe.rukamori.voidsmood.ui.theme.TextMuted
 
 // Definisi 4 Tab Navigasi Utama VoidsMood
-enum class NavigationTab(val id: String, val title: String) {
-    HOME("home", "Beranda"),
-    EXPLORE("explore", "Eksplorasi"),
-    SUBSCRIPTIONS("subscriptions", "Langganan"),
-    LIBRARY("library", "Pustaka")
+enum class NavigationTab(val id: String) {
+    HOME("home"),
+    EXPLORE("explore"),
+    SUBSCRIPTIONS("subscriptions"),
+    LIBRARY("library")
 }
 
-// BARU: Floating Apple-Style Capsule Navigation Toolbar (Terinspirasi dari AppleMusicNavigationToolbar VoidTune)
-// Mematuhi standar anti-slop: tanpa dots ornamen palsu, desain kapsul 50% murni fungsional, kontras tinggi.
+// BARU: Floating Apple-Style Navigation Bar Plek VoidTune (AppleMusicNavigationToolbar)
+// Satu kapsul tunggal murni, sliding indicator fisik berbasis drawWithCache, TANPA LABEL TEKS (ikon murni 100%)
 @Composable
 fun AppleBottomNavigationBar(
     currentTab: NavigationTab,
     onTabSelected: (NavigationTab) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val tabs = remember { NavigationTab.entries }
     val capsuleShape = remember { RoundedCornerShape(percent = 50) }
+    val selectedIndex = tabs.indexOf(currentTab)
+
+    // Animasi pergerakan indikator sliding pill ala Apple Music VoidTune
+    val indicatorPosition by animateFloatAsState(
+        targetValue = selectedIndex.coerceAtLeast(0).toFloat(),
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = Spring.DampingRatioLowBouncy),
+        label = "appleIndicatorPos"
+    )
 
     Box(
         modifier = modifier
@@ -66,36 +74,45 @@ fun AppleBottomNavigationBar(
     ) {
         Box(
             modifier = Modifier
-                .widthIn(max = 420.dp)
+                .widthIn(max = 380.dp)
                 .fillMaxWidth()
-                .height(64.dp)
+                .height(58.dp)
                 .clip(capsuleShape)
-                .background(Color(0xFF090C12).copy(alpha = 0.92f))
-                .border(1.dp, Color.White.copy(alpha = 0.12f), capsuleShape)
-                .padding(horizontal = 6.dp, vertical = 5.dp)
+                .background(Color(0xFF0A0D14).copy(alpha = 0.94f))
+                .border(1.dp, Color.White.copy(alpha = 0.14f), capsuleShape)
+                .padding(horizontal = 6.dp, vertical = 4.dp)
         ) {
             Row(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .drawWithCache {
+                        val itemWidth = size.width / tabs.size
+                        val radius = CornerRadius(size.height / 2f)
+                        onDrawBehind {
+                            val left = indicatorPosition * itemWidth
+                            drawRoundRect(
+                                color = Color.White.copy(alpha = 0.12f),
+                                topLeft = Offset(left + 2.dp.toPx(), 2.dp.toPx()),
+                                size = Size(itemWidth - 4.dp.toPx(), size.height - 4.dp.toPx()),
+                                cornerRadius = radius
+                            )
+                        }
+                    },
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                NavigationTab.entries.forEach { tab ->
+                tabs.forEach { tab ->
                     val isSelected = tab == currentTab
 
                     val iconScale by animateFloatAsState(
-                        targetValue = if (isSelected) 1.08f else 1.0f,
+                        targetValue = if (isSelected) 1.10f else 1.0f,
                         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
                         label = "tabScale"
                     )
 
                     val tintColor by animateColorAsState(
-                        targetValue = if (isSelected) IceWhite else TextMuted,
+                        targetValue = if (isSelected) IceWhite else TextMuted.copy(alpha = 0.65f),
                         label = "tabTint"
-                    )
-
-                    val backgroundPillColor by animateColorAsState(
-                        targetValue = if (isSelected) Color.White.copy(alpha = 0.10f) else Color.Transparent,
-                        label = "pillBg"
                     )
 
                     Box(
@@ -103,7 +120,6 @@ fun AppleBottomNavigationBar(
                             .weight(1f)
                             .fillMaxHeight()
                             .clip(capsuleShape)
-                            .background(backgroundPillColor)
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
@@ -111,29 +127,19 @@ fun AppleBottomNavigationBar(
                             ),
                         contentAlignment = Alignment.Center
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center,
+                        Box(
                             modifier = Modifier.graphicsLayer {
                                 scaleX = iconScale
                                 scaleY = iconScale
-                            }
+                            },
+                            contentAlignment = Alignment.Center
                         ) {
                             when (tab) {
-                                NavigationTab.HOME -> LucideHome(tint = tintColor, size = 20.dp)
-                                NavigationTab.EXPLORE -> LucideCompass(tint = tintColor, size = 20.dp)
-                                NavigationTab.SUBSCRIPTIONS -> LucideSubscriptions(tint = tintColor, size = 20.dp)
-                                NavigationTab.LIBRARY -> LucideLibrary(tint = tintColor, size = 20.dp)
+                                NavigationTab.HOME -> LucideHome(tint = tintColor, size = 22.dp)
+                                NavigationTab.EXPLORE -> LucideCompass(tint = tintColor, size = 22.dp)
+                                NavigationTab.SUBSCRIPTIONS -> LucideSubscriptions(tint = tintColor, size = 22.dp)
+                                NavigationTab.LIBRARY -> LucideLibrary(tint = tintColor, size = 22.dp)
                             }
-
-                            Text(
-                                text = tab.title,
-                                color = tintColor,
-                                fontSize = 10.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                maxLines = 1,
-                                modifier = Modifier.padding(top = 2.dp)
-                            )
                         }
                     }
                 }
