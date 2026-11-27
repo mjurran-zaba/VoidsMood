@@ -26,6 +26,9 @@ class HomeViewModel : ViewModel() {
     private val _uiState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
     init {
         loadTrending()
     }
@@ -41,6 +44,17 @@ class HomeViewModel : ViewModel() {
                     error.localizedMessage ?: "Gagal memuat feed YouTube. Cek koneksi internet."
                 )
             }
+        }
+    }
+
+    fun refreshTrending() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isRefreshing.value = true
+            val result = YouTubeRepository.getTrendingVideos()
+            result.onSuccess { items ->
+                _uiState.value = HomeUiState.Success(videos = items, isSearching = false)
+            }
+            _isRefreshing.value = false
         }
     }
 

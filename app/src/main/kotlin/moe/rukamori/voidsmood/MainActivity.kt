@@ -21,15 +21,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.launch
+import moe.rukamori.voidsmood.data.model.VideoItem
 import moe.rukamori.voidsmood.ui.components.VoidsTopAppBar
 import moe.rukamori.voidsmood.ui.drawer.VoidsDrawerContent
 import moe.rukamori.voidsmood.ui.screens.HomeScreen
+import moe.rukamori.voidsmood.ui.screens.PlayerScreen
 import moe.rukamori.voidsmood.ui.theme.VoidsMoodTheme
 import moe.rukamori.voidsmood.ui.viewmodel.HomeViewModel
+import moe.rukamori.voidsmood.ui.viewmodel.PlayerViewModel
 
 class MainActivity : ComponentActivity() {
 
     private val homeViewModel: HomeViewModel by viewModels()
+    private val playerViewModel: PlayerViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,50 +44,66 @@ class MainActivity : ComponentActivity() {
                 val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
                 val scope = rememberCoroutineScope()
                 var currentNavId by remember { mutableStateOf("home") }
+                var activeVideo by remember { mutableStateOf<VideoItem?>(null) }
 
-                ModalNavigationDrawer(
-                    drawerState = drawerState,
-                    scrimColor = Color.Black.copy(alpha = 0.65f),
-                    drawerContent = {
-                        VoidsDrawerContent(
-                            selectedId = currentNavId,
-                            onItemSelected = { id ->
-                                currentNavId = id
-                                if (id == "home") {
-                                    homeViewModel.loadTrending()
-                                }
-                                scope.launch { drawerState.close() }
-                            }
-                        )
-                    }
-                ) {
-                    Scaffold(
-                        modifier = Modifier.fillMaxSize(),
-                        containerColor = Color.Transparent,
-                        topBar = {
-                            VoidsTopAppBar(
-                                onMenuClick = {
-                                    scope.launch {
-                                        if (drawerState.isClosed) drawerState.open() else drawerState.close()
+                if (activeVideo != null) {
+                    // Layar Pemutar Video Media3 YouTube (Zero Ad, On-Device, Video Terkait)
+                    PlayerScreen(
+                        video = activeVideo!!,
+                        viewModel = playerViewModel,
+                        onBack = {
+                            playerViewModel.closePlayer()
+                            activeVideo = null
+                        },
+                        onVideoSelect = { newVideo ->
+                            activeVideo = newVideo
+                        }
+                    )
+                } else {
+                    ModalNavigationDrawer(
+                        drawerState = drawerState,
+                        scrimColor = Color.Black.copy(alpha = 0.65f),
+                        drawerContent = {
+                            VoidsDrawerContent(
+                                selectedId = currentNavId,
+                                onItemSelected = { id ->
+                                    currentNavId = id
+                                    if (id == "home") {
+                                        homeViewModel.loadTrending()
                                     }
-                                },
-                                onSearch = { query ->
-                                    homeViewModel.search(query)
+                                    scope.launch { drawerState.close() }
                                 }
                             )
                         }
-                    ) { innerPadding ->
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(innerPadding)
-                        ) {
-                            HomeScreen(
-                                viewModel = homeViewModel,
-                                onVideoClick = { video ->
-                                    // Klik kartu video (siap disambungkan ke Player Media3 di fase berikutnya)
-                                }
-                            )
+                    ) {
+                        Scaffold(
+                            modifier = Modifier.fillMaxSize(),
+                            containerColor = Color.Transparent,
+                            topBar = {
+                                VoidsTopAppBar(
+                                    onMenuClick = {
+                                        scope.launch {
+                                            if (drawerState.isClosed) drawerState.open() else drawerState.close()
+                                        }
+                                    },
+                                    onSearch = { query ->
+                                        homeViewModel.search(query)
+                                    }
+                                )
+                            }
+                        ) { innerPadding ->
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(innerPadding)
+                            ) {
+                                HomeScreen(
+                                    viewModel = homeViewModel,
+                                    onVideoClick = { video ->
+                                        activeVideo = video
+                                    }
+                                )
+                            }
                         }
                     }
                 }

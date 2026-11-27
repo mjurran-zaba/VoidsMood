@@ -77,10 +77,8 @@ fun LucideCompass(
         val h = this.size.height
         val stroke = strokeWidth.toPx()
 
-        // Outer circle
         drawCircle(tint, radius = w * 0.40f, center = Offset(w * 0.5f, h * 0.5f), style = Stroke(stroke))
 
-        // Compass needle diamond
         val needle = Path().apply {
             moveTo(w * 0.62f, h * 0.38f)
             lineTo(w * 0.45f, h * 0.45f)
@@ -104,14 +102,12 @@ fun LucideSubscriptions(
         val h = this.size.height
         val stroke = strokeWidth.toPx()
 
-        // TV / Screen display
         drawRoundRect(
             color = tint,
             topLeft = Offset(w * 0.12f, h * 0.30f),
             size = Size(w * 0.76f, h * 0.52f),
             style = Stroke(stroke, cap = StrokeCap.Round, join = StrokeJoin.Round)
         )
-        // Antenna
         drawLine(tint, Offset(w * 0.35f, h * 0.14f), Offset(w * 0.50f, h * 0.30f), stroke, StrokeCap.Round)
         drawLine(tint, Offset(w * 0.65f, h * 0.14f), Offset(w * 0.50f, h * 0.30f), stroke, StrokeCap.Round)
     }
@@ -129,7 +125,6 @@ fun LucideLibrary(
         val h = this.size.height
         val stroke = strokeWidth.toPx()
 
-        // Folder outline
         val folder = Path().apply {
             moveTo(w * 0.12f, h * 0.28f)
             lineTo(w * 0.40f, h * 0.28f)
@@ -156,7 +151,6 @@ fun LucideHistory(
         val stroke = strokeWidth.toPx()
 
         drawCircle(tint, radius = w * 0.38f, center = Offset(w * 0.5f, h * 0.5f), style = Stroke(stroke))
-        // Clock hands (hour & minute)
         drawLine(tint, Offset(w * 0.5f, h * 0.5f), Offset(w * 0.5f, h * 0.28f), stroke, StrokeCap.Round)
         drawLine(tint, Offset(w * 0.5f, h * 0.5f), Offset(w * 0.68f, h * 0.5f), stroke, StrokeCap.Round)
     }
@@ -179,7 +173,6 @@ fun LucideSettings(
     }
 }
 
-// BARU: Ikon Vektor Lucide Search untuk pencarian video YouTube
 @Composable
 fun LucideSearch(
     modifier: Modifier = Modifier,
@@ -192,14 +185,12 @@ fun LucideSearch(
         val h = this.size.height
         val stroke = strokeWidth.toPx()
 
-        // Magnifying glass lens
         drawCircle(
             color = tint,
             radius = w * 0.28f,
             center = Offset(w * 0.42f, h * 0.42f),
             style = Stroke(stroke)
         )
-        // Handle
         drawLine(
             color = tint,
             start = Offset(w * 0.62f, h * 0.62f),
@@ -210,9 +201,9 @@ fun LucideSearch(
     }
 }
 
-// BARU: Ikon Vektor Lucide Refresh untuk reload feed YouTube
+// BARU: Ikon Arrow Left (Kembali dari Player ke Feed)
 @Composable
-fun LucideRefresh(
+fun LucideArrowLeft(
     modifier: Modifier = Modifier,
     tint: Color = Color.White,
     size: Dp = 24.dp,
@@ -223,29 +214,81 @@ fun LucideRefresh(
         val h = this.size.height
         val stroke = strokeWidth.toPx()
 
-        drawArc(
-            color = tint,
-            startAngle = 45f,
-            sweepAngle = 270f,
-            useCenter = false,
-            topLeft = Offset(w * 0.15f, h * 0.15f),
-            size = androidx.compose.ui.geometry.Size(w * 0.7f, h * 0.7f),
-            style = Stroke(stroke, cap = StrokeCap.Round)
-        )
-        // Arrow head
-        drawLine(
-            color = tint,
-            start = Offset(w * 0.85f, h * 0.4f),
-            end = Offset(w * 0.85f, h * 0.18f),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round
-        )
-        drawLine(
-            color = tint,
-            start = Offset(w * 0.85f, h * 0.18f),
-            end = Offset(w * 0.63f, h * 0.18f),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round
-        )
+        drawLine(tint, Offset(w * 0.82f, h * 0.50f), Offset(w * 0.18f, h * 0.50f), stroke, StrokeCap.Round)
+        drawLine(tint, Offset(w * 0.42f, h * 0.26f), Offset(w * 0.18f, h * 0.50f), stroke, StrokeCap.Round)
+        drawLine(tint, Offset(w * 0.42f, h * 0.74f), Offset(w * 0.18f, h * 0.50f), stroke, StrokeCap.Round)
+    }
+}
+
+// BARU: Ikon Thumbs Up (Suka)
+@Composable
+fun LucideThumbsUp(
+    modifier: Modifier = Modifier,
+    tint: Color = Color.White,
+    size: Dp = 20.dp,
+    strokeWidth: Dp = 2.dp
+) {
+    Canvas(modifier = modifier.size(size)) {
+        val w = this.size.width
+        val h = this.size.height
+        val stroke = strokeWidth.toPx()
+
+        val path = Path().apply {
+            moveTo(w * 0.32f, h * 0.85f)
+            lineTo(w * 0.75f, h * 0.85f)
+            cubicTo(w * 0.82f, h * 0.85f, w * 0.85f, h * 0.80f, w * 0.85f, h * 0.70f)
+            lineTo(w * 0.90f, h * 0.48f)
+            cubicTo(w * 0.90f, h * 0.40f, w * 0.82f, h * 0.40f, w * 0.75f, h * 0.40f)
+            lineTo(w * 0.58f, h * 0.40f)
+            lineTo(w * 0.62f, h * 0.18f)
+            cubicTo(w * 0.62f, h * 0.12f, w * 0.55f, h * 0.10f, w * 0.50f, h * 0.15f)
+            lineTo(w * 0.32f, h * 0.45f)
+            close()
+        }
+        drawPath(path, tint, style = Stroke(stroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        drawLine(tint, Offset(w * 0.15f, h * 0.45f), Offset(w * 0.15f, h * 0.85f), stroke, StrokeCap.Round)
+        drawLine(tint, Offset(w * 0.32f, h * 0.45f), Offset(w * 0.32f, h * 0.85f), stroke, StrokeCap.Round)
+    }
+}
+
+// BARU: Ikon Share
+@Composable
+fun LucideShare2(
+    modifier: Modifier = Modifier,
+    tint: Color = Color.White,
+    size: Dp = 20.dp,
+    strokeWidth: Dp = 2.dp
+) {
+    Canvas(modifier = modifier.size(size)) {
+        val w = this.size.width
+        val h = this.size.height
+        val stroke = strokeWidth.toPx()
+
+        drawCircle(tint, radius = w * 0.12f, center = Offset(w * 0.75f, h * 0.25f), style = Stroke(stroke))
+        drawCircle(tint, radius = w * 0.12f, center = Offset(w * 0.75f, h * 0.75f), style = Stroke(stroke))
+        drawCircle(tint, radius = w * 0.12f, center = Offset(w * 0.25f, h * 0.50f), style = Stroke(stroke))
+
+        drawLine(tint, Offset(w * 0.35f, h * 0.44f), Offset(w * 0.65f, h * 0.31f), stroke, StrokeCap.Round)
+        drawLine(tint, Offset(w * 0.35f, h * 0.56f), Offset(w * 0.65f, h * 0.69f), stroke, StrokeCap.Round)
+    }
+}
+
+// BARU: Ikon Download
+@Composable
+fun LucideDownload(
+    modifier: Modifier = Modifier,
+    tint: Color = Color.White,
+    size: Dp = 20.dp,
+    strokeWidth: Dp = 2.dp
+) {
+    Canvas(modifier = modifier.size(size)) {
+        val w = this.size.width
+        val h = this.size.height
+        val stroke = strokeWidth.toPx()
+
+        drawLine(tint, Offset(w * 0.50f, h * 0.15f), Offset(w * 0.50f, h * 0.65f), stroke, StrokeCap.Round)
+        drawLine(tint, Offset(w * 0.30f, h * 0.45f), Offset(w * 0.50f, h * 0.65f), stroke, StrokeCap.Round)
+        drawLine(tint, Offset(w * 0.70f, h * 0.45f), Offset(w * 0.50f, h * 0.65f), stroke, StrokeCap.Round)
+        drawLine(tint, Offset(w * 0.20f, h * 0.85f), Offset(w * 0.80f, h * 0.85f), stroke, StrokeCap.Round)
     }
 }

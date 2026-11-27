@@ -39,5 +39,15 @@ data class VideoItem(
                 else -> "$count x ditonton"
             }
         }
+
+        fun formatCount(count: Long): String {
+            if (count <= 0) return ""
+            return when {
+                count >= 1_000_000_000 -> String.format("%.1fM", count / 1_000_000_000.0)
+                count >= 1_000_000 -> String.format("%.1f jt", count / 1_000_000.0)
+                count >= 1_000 -> String.format("%.1f rb", count / 1_000.0)
+                else -> "$count"
+            }
+        }
     }
 }

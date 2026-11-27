@@ -54,3 +54,8 @@
 -dontwarn okhttp3.**
 -keep class okhttp3.** { *; }
 -keep interface okhttp3.** { *; }
+
+# AndroidX Media3 ExoPlayer
+-keep class androidx.media3.ui.** { *; }
+-keep class androidx.media3.exoplayer.** { *; }
+-dontwarn androidx.media3.**

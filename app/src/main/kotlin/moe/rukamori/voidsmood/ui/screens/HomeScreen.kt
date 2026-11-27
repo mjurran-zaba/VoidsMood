@@ -1,9 +1,6 @@
 // meticulous and honest
 package moe.rukamori.voidsmood.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,8 +21,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -39,19 +37,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import moe.rukamori.voidsmood.data.model.VideoItem
 import moe.rukamori.voidsmood.ui.components.GlassmorphicCard
-import moe.rukamori.voidsmood.ui.components.LucideRefresh
 import moe.rukamori.voidsmood.ui.components.VideoCard
-import moe.rukamori.voidsmood.ui.theme.DarkBlueOceanAura
-import moe.rukamori.voidsmood.ui.theme.FadedGreyCharcoalAura
 import moe.rukamori.voidsmood.ui.theme.GlassBorder
-import moe.rukamori.voidsmood.ui.theme.GlassBorderHighlight
 import moe.rukamori.voidsmood.ui.theme.GlassSurface
 import moe.rukamori.voidsmood.ui.theme.IceWhite
 import moe.rukamori.voidsmood.ui.theme.PolarCyan
+import moe.rukamori.voidsmood.ui.theme.PureBlack
 import moe.rukamori.voidsmood.ui.theme.TextMuted
 import moe.rukamori.voidsmood.ui.viewmodel.HomeUiState
 import moe.rukamori.voidsmood.ui.viewmodel.HomeViewModel
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
@@ -59,8 +55,12 @@ fun HomeScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
 
-    Box(
+    // Standar UX YouTube: Refresh konten murni dengan tarik ke bawah (Pull-to-Refresh)
+    PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = { viewModel.refreshTrending() },
         modifier = modifier.fillMaxSize()
     ) {
         when (val state = uiState) {
@@ -79,7 +79,7 @@ fun HomeScreen(
                     isSearching = state.isSearching,
                     query = state.query,
                     onVideoClick = onVideoClick,
-                    onRefresh = { viewModel.loadTrending() }
+                    onClearSearch = { viewModel.loadTrending() }
                 )
             }
         }
@@ -92,15 +92,15 @@ private fun SuccessFeedView(
     isSearching: Boolean,
     query: String,
     onVideoClick: (VideoItem) -> Unit,
-    onRefresh: () -> Unit
+    onClearSearch: () -> Unit
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
-            // Header Bar with Section Label
+            // Header Bar: Mengikuti tata letak YouTube tanpa tombol reload aneh
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -119,25 +119,28 @@ private fun SuccessFeedView(
                             .background(PolarCyan)
                     )
                     Text(
-                        text = if (isSearching) "Hasil Pencarian: \"$query\"" else "Sedang Tren di YouTube",
+                        text = if (isSearching) "Hasil: \"$query\"" else "Sedang Tren",
                         color = IceWhite,
-                        fontSize = 16.sp,
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
 
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(FadedGreyCharcoalAura.copy(alpha = 0.45f))
-                        .clickable(onClick = onRefresh),
-                    contentAlignment = Alignment.Center
-                ) {
-                    LucideRefresh(
-                        tint = PolarCyan,
-                        size = 18.dp
-                    )
+                if (isSearching) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color(0xFF1E222D))
+                            .clickable(onClick = onClearSearch)
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = "Kembali ke Tren",
+                            color = PolarCyan,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
             }
         }
@@ -169,7 +172,7 @@ private fun SuccessFeedView(
             }
         }
 
-        // Bottom Spacer for Navigation Bar clearance
+        // Bottom Spacer untuk clearance navigasi sistem
         item {
             Spacer(modifier = Modifier.height(72.dp))
         }
@@ -184,7 +187,7 @@ private fun LoadingFeedView() {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Skeleton shimmer placeholder cards
+        // Skeleton placeholder cards hemat render
         repeat(3) {
             Box(
                 modifier = Modifier
@@ -287,7 +290,7 @@ private fun ErrorFeedView(
                 ) {
                     Text(
                         text = "Coba Lagi",
-                        color = Color.Black,
+                        color = PureBlack,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
                     )

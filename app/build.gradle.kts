@@ -152,4 +152,7 @@ dependencies {
     // BARU: Media3 ExoPlayer Core untuk Pemutaran Video & Audio
     implementation(libs.media3)
     implementation(libs.media3.okhttp)
+    implementation(libs.media3.ui)
+    implementation(libs.media3.dash)
+    implementation(libs.media3.hls)
 }
