@@ -54,7 +54,10 @@ object YouTubeRepository {
                         url = item.url,
                         title = item.name ?: "Untitled",
                         uploaderName = item.uploaderName ?: "Unknown Creator",
-                        uploaderAvatarUrl = item.uploaderAvatarUrl,
+                        // DINONAKTIFKAN: uploaderAvatarUrl tidak ada pada StreamInfoItem NewPipeExtractor 0.27.1
+                        // uploaderAvatarUrl = item.uploaderAvatarUrl,
+                        // BARU: Set null, UI otomatis me-render inisial channel elegan
+                        uploaderAvatarUrl = null,
                         thumbnailUrl = item.thumbnailUrl ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
                         durationSeconds = item.duration,
                         durationText = VideoItem.formatDuration(item.duration),
@@ -86,7 +89,10 @@ object YouTubeRepository {
                         url = item.url,
                         title = item.name ?: "Untitled",
                         uploaderName = item.uploaderName ?: "Unknown Creator",
-                        uploaderAvatarUrl = item.uploaderAvatarUrl,
+                        // DINONAKTIFKAN: uploaderAvatarUrl tidak ada pada StreamInfoItem NewPipeExtractor 0.27.1
+                        // uploaderAvatarUrl = item.uploaderAvatarUrl,
+                        // BARU: Set null, UI otomatis me-render inisial channel elegan
+                        uploaderAvatarUrl = null,
                         thumbnailUrl = item.thumbnailUrl ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
                         durationSeconds = item.duration,
                         durationText = VideoItem.formatDuration(item.duration),
