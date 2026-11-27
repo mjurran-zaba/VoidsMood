@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import moe.rukamori.voidsmood.data.repository.LocalLibraryRepository
+import moe.rukamori.voidsmood.data.repository.YouTubeRepository
 import moe.rukamori.voidsmood.ui.components.AppleBottomNavigationBar
 import moe.rukamori.voidsmood.ui.components.MiniPlayerBar
 import moe.rukamori.voidsmood.ui.components.NavigationTab
@@ -88,6 +89,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         LocalLibraryRepository.init(this)
+        // BARU: Inisialisasi YouTubeRepository dengan Context aplikasi untuk deteksi lokasi negara SIM/jaringan pengguna
+        YouTubeRepository.init(this)
 
         setContent {
             VoidsMoodTheme {

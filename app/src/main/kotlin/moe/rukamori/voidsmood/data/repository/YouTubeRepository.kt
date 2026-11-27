@@ -2,6 +2,8 @@
 // READ AND IMPLEMENT AGENTS.md BEFORE YOU DO
 package moe.rukamori.voidsmood.data.repository
 
+import android.content.Context
+import android.telephony.TelephonyManager
 import android.util.LruCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -22,6 +24,7 @@ import org.schabi.newpipe.extractor.kiosk.KioskInfo
 import org.schabi.newpipe.extractor.localization.ContentCountry
 import org.schabi.newpipe.extractor.localization.Localization
 import org.schabi.newpipe.extractor.search.SearchInfo
+import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.extractor.stream.StreamType
@@ -107,7 +110,38 @@ object YouTubeRepository {
     // Memungkinkan pemutaran ulang atau swipe kembali di Shorts/Home/Explore tanpa request jaringan ulang (0 ms latency)
     private val playbackDetailsCache = LruCache<String, VideoPlaybackDetails>(50)
 
-    fun initIfNeeded() {
+    private var appContext: Context? = null
+
+    // BARU: Inisialisasi eksplisit repositori dengan Context aplikasi
+    fun init(context: Context) {
+        appContext = context.applicationContext
+        initIfNeeded(context.applicationContext)
+    }
+
+    // DINONAKTIFKAN: Inisialisasi lama tanpa dukungan penangkapan Context aplikasi
+    // fun initIfNeeded() {
+    //     if (!isInitialized) {
+    //         synchronized(this) {
+    //             if (!isInitialized) {
+    //                 val downloader = NewPipeDownloader()
+    //                 val defaultLocale = java.util.Locale.getDefault()
+    //                 val lang = defaultLocale.language.ifBlank { "en" }
+    //                 val country = defaultLocale.country.ifBlank { "US" }
+    //                 NewPipe.init(
+    //                     downloader,
+    //                     Localization(lang, country),
+    //                     ContentCountry("US")
+    //                 )
+    //                 isInitialized = true
+    //             }
+    //         }
+    //     }
+    // }
+    // BARU: Inisialisasi NewPipe dengan Context aplikasi untuk deteksi lokasi SIM/operator
+    fun initIfNeeded(context: Context? = null) {
+        if (context != null && appContext == null) {
+            appContext = context.applicationContext
+        }
         if (!isInitialized) {
             synchronized(this) {
                 if (!isInitialized) {
@@ -131,6 +165,111 @@ object YouTubeRepository {
                 }
             }
         }
+    }
+
+    /**
+     * BARU: Mendeteksi kode ISO-2 negara pengguna berdasarkan prioritas perangkat seluler & jaringan:
+     * 1. SIM Card Country (TelephonyManager.simCountryIso) - permanen bagi pemilik kartu SIM lokal meski sedang roaming
+     * 2. Network Operator Country (TelephonyManager.networkCountryIso) - negara menara BTS seluler saat ini
+     * 3. Fallback ke Locale negara sistem perangkat, dan default ke "ID" (Indonesia)
+     */
+    fun detectUserCountry(): String {
+        val ctx = appContext
+        if (ctx != null) {
+            try {
+                val tm = ctx.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
+                val simCountry = tm?.simCountryIso?.trim()?.uppercase()
+                if (!simCountry.isNullOrBlank() && simCountry.length == 2) {
+                    return simCountry
+                }
+                val networkCountry = tm?.networkCountryIso?.trim()?.uppercase()
+                if (!networkCountry.isNullOrBlank() && networkCountry.length == 2) {
+                    return networkCountry
+                }
+            } catch (_: Exception) {}
+        }
+        val locCountry = java.util.Locale.getDefault().country?.trim()?.uppercase()
+        if (!locCountry.isNullOrBlank() && locCountry.length == 2) {
+            return locCountry
+        }
+        return "ID"
+    }
+
+    /**
+     * BARU: Pemetaan kode negara ISO-2 ke kode bahasa ISO 639-1
+     */
+    fun countryToLanguageCode(country: String): String {
+        return when (country.uppercase()) {
+            "ID" -> "id"
+            "MY" -> "ms"
+            "JP" -> "ja"
+            "KR" -> "ko"
+            "CN", "TW", "HK" -> "zh"
+            "SA", "AE", "EG" -> "ar"
+            "ES", "MX", "AR", "CO" -> "es"
+            "FR" -> "fr"
+            "DE" -> "de"
+            "RU" -> "ru"
+            "TH" -> "th"
+            "VN" -> "vi"
+            "PH" -> "fil"
+            "IN" -> "hi"
+            "US", "GB", "AU", "CA", "NZ" -> "en"
+            else -> "id"
+        }
+    }
+
+    /**
+     * BARU: Algoritma seleksi stream audio terkalibrasi multi-prioritas:
+     * - Prioritas 1 (Track Asli / Original): Memprioritaskan audio asli kreator (misal Windah = Indo, PewDiePie = Inggris, T-Series = Hindi)
+     *   dan mengeliminasi audio dubbing AI YouTube yang tidak diinginkan.
+     * - Prioritas 2 (Lokasi Negara HP): Jika video tidak menyertakan label 'original', cocokkan dengan negara SIM/jaringan pengguna.
+     * - Prioritas 3 (Fallback Single-Track): Ambil track audio default untuk video biasa/musik tanpa fitur multi-bahasa.
+     * - Tahap Kualitas: Pilih format M4A/AAC bitrate tertinggi untuk efisiensi decoding hardware & kejernihan maksimal.
+     */
+    fun selectOptimalAudioStream(audioStreams: List<AudioStream>?): AudioStream? {
+        if (audioStreams.isNullOrEmpty()) return null
+
+        // Prioritas 1: Track Audio Asli / Original dari kreator
+        val originalStreams = audioStreams.filter { stream ->
+            val trackName = stream.audioTrackName?.lowercase() ?: ""
+            trackName.contains("original") || trackName.contains("default") || trackName.contains("yokuqala")
+        }
+
+        val candidateStreams = if (originalStreams.isNotEmpty()) {
+            originalStreams
+        } else {
+            // Prioritas 2: Berdasarkan lokasi/negara pengguna (SIM / Operator)
+            val detectedCountry = detectUserCountry()
+            val targetLang = countryToLanguageCode(detectedCountry)
+            val locationMatchedStreams = audioStreams.filter { stream ->
+                val locale = stream.audioLocale?.lowercase() ?: ""
+                val trackId = stream.audioTrackId?.lowercase() ?: ""
+                locale == targetLang || (targetLang == "id" && locale == "in") ||
+                        trackId.startsWith(targetLang) || (targetLang == "id" && trackId.startsWith("in"))
+            }
+
+            if (locationMatchedStreams.isNotEmpty()) {
+                locationMatchedStreams
+            } else {
+                // Prioritas 3: Stream standar tanpa tag multi-audio (video musik / umum)
+                val standardStreams = audioStreams.filter { it.audioTrackId == null && it.audioTrackName == null }
+                if (standardStreams.isNotEmpty()) {
+                    standardStreams
+                } else {
+                    audioStreams
+                }
+            }
+        }
+
+        // Tahap Kualitas: Format M4A/AAC bitrate tertinggi
+        val m4aCandidate = candidateStreams
+            .filter { it.format == MediaFormat.M4A || it.codec?.contains("mp4a", ignoreCase = true) == true }
+            .maxByOrNull { it.averageBitrate }
+
+        return m4aCandidate
+            ?: candidateStreams.maxByOrNull { it.averageBitrate }
+            ?: candidateStreams.firstOrNull()
     }
 
     // Mengambil daftar video beranda secara dinamis dengan rotasi seed saat refresh
@@ -1043,13 +1182,15 @@ object YouTubeRepository {
 
             val selectedVideoUrl = muxedProgressive?.url ?: videoOnlyStream?.url
 
-            // Cari stream audio dengan bitrate optimal (prioritaskan format M4A/AAC untuk hardware decoder Android universal)
-            val selectedAudioUrl = info.audioStreams
-                ?.filter { it.format == MediaFormat.M4A || it.codec?.contains("mp4a", ignoreCase = true) == true }
-                ?.maxByOrNull { it.averageBitrate }
-                ?.url
-                ?: info.audioStreams?.maxByOrNull { it.averageBitrate }?.url
-                ?: info.audioStreams?.firstOrNull()?.url
+            // DINONAKTIFKAN: Pemilihan stream audio lama yang hanya mencari bitrate tertinggi tanpa memeriksa bahasa/original track
+            // val selectedAudioUrl = info.audioStreams
+            //     ?.filter { it.format == MediaFormat.M4A || it.codec?.contains("mp4a", ignoreCase = true) == true }
+            //     ?.maxByOrNull { it.averageBitrate }
+            //     ?.url
+            //     ?: info.audioStreams?.maxByOrNull { it.averageBitrate }?.url
+            //     ?: info.audioStreams?.firstOrNull()?.url
+            // BARU: Pemilihan stream audio terkalibrasi multi-prioritas: Original Track (suara asli kreator) -> Lokasi SIM/Negara -> Standar -> Bitrate M4A Tertinggi
+            val selectedAudioUrl = selectOptimalAudioStream(info.audioStreams)?.url
 
             val related = info.relatedItems
                 .filterIsInstance<StreamInfoItem>()
