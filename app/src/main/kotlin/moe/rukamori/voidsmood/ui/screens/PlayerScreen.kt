@@ -7,11 +7,18 @@ import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.view.ViewGroup
 import androidx.activity.compose.BackHandler
-import kotlin.OptIn
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,13 +49,18 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -72,6 +84,7 @@ import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.PlayerView
 import coil3.compose.AsyncImage
+import kotlinx.coroutines.delay
 import moe.rukamori.voidsmood.data.model.VideoItem
 import moe.rukamori.voidsmood.data.model.VideoPlaybackDetails
 import moe.rukamori.voidsmood.data.network.NewPipeDownloader
@@ -80,6 +93,10 @@ import moe.rukamori.voidsmood.ui.components.LucideCheck
 import moe.rukamori.voidsmood.ui.components.LucideDownload
 import moe.rukamori.voidsmood.ui.components.LucideMaximize
 import moe.rukamori.voidsmood.ui.components.LucideMinimize
+import moe.rukamori.voidsmood.ui.components.LucidePause
+import moe.rukamori.voidsmood.ui.components.LucidePlay
+import moe.rukamori.voidsmood.ui.components.LucideRotateCcw10
+import moe.rukamori.voidsmood.ui.components.LucideRotateCw10
 import moe.rukamori.voidsmood.ui.components.LucideSettings
 import moe.rukamori.voidsmood.ui.components.LucideShare2
 import moe.rukamori.voidsmood.ui.components.LucideThumbsUp
@@ -91,6 +108,7 @@ import moe.rukamori.voidsmood.ui.theme.PureBlack
 import moe.rukamori.voidsmood.ui.theme.TextMuted
 import moe.rukamori.voidsmood.ui.viewmodel.PlayerUiState
 import moe.rukamori.voidsmood.ui.viewmodel.PlayerViewModel
+import kotlin.OptIn
 
 private fun Context.findActivity(): Activity? {
     var ctx = this
@@ -99,6 +117,126 @@ private fun Context.findActivity(): Activity? {
         ctx = ctx.baseContext
     }
     return null
+}
+
+private fun formatTime(ms: Long): String {
+    val totalSeconds = (ms / 1000).coerceAtLeast(0)
+    val seconds = totalSeconds % 60
+    val minutes = (totalSeconds / 60) % 60
+    val hours = totalSeconds / 3600
+    return if (hours > 0) {
+        String.format("%d:%02d:%02d", hours, minutes, seconds)
+    } else {
+        String.format("%02d:%02d", minutes, seconds)
+    }
+}
+
+// BARU: Komponen Seekbar YouTube Asli (Garis merah + buffer putih + thumb titik merah)
+@Composable
+fun YouTubeProgressBar(
+    positionMs: Long,
+    durationMs: Long,
+    bufferedMs: Long,
+    onSeek: (Long) -> Unit,
+    onSeekingChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val durationSafe = durationMs.coerceAtLeast(1L)
+    var isDragging by remember { mutableStateOf(false) }
+    var dragFraction by remember { mutableFloatStateOf(0f) }
+
+    val playedFraction = if (isDragging) dragFraction else (positionMs.toFloat() / durationSafe).coerceIn(0f, 1f)
+    val bufferedFraction = (bufferedMs.toFloat() / durationSafe).coerceIn(0f, 1f)
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(26.dp)
+            .pointerInput(durationSafe) {
+                detectTapGestures(
+                    onPress = { offset ->
+                        isDragging = true
+                        onSeekingChange(true)
+                        dragFraction = (offset.x / size.width).coerceIn(0f, 1f)
+                        val success = tryAwaitRelease()
+                        if (success) {
+                            onSeek((dragFraction * durationSafe).toLong())
+                        }
+                        isDragging = false
+                        onSeekingChange(false)
+                    }
+                )
+            }
+            .pointerInput(durationSafe) {
+                detectHorizontalDragGestures(
+                    onDragStart = { offset ->
+                        isDragging = true
+                        onSeekingChange(true)
+                        dragFraction = (offset.x / size.width).coerceIn(0f, 1f)
+                    },
+                    onDragEnd = {
+                        onSeek((dragFraction * durationSafe).toLong())
+                        isDragging = false
+                        onSeekingChange(false)
+                    },
+                    onDragCancel = {
+                        isDragging = false
+                        onSeekingChange(false)
+                    },
+                    onHorizontalDrag = { _, dragAmount ->
+                        val deltaFraction = dragAmount / size.width
+                        dragFraction = (dragFraction + deltaFraction).coerceIn(0f, 1f)
+                    }
+                )
+            },
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(if (isDragging) 4.5.dp else 3.dp)
+        ) {
+            val w = size.width
+            val h = size.height
+
+            // 1. Unplayed line (abu-abu transparan)
+            drawLine(
+                color = Color.White.copy(alpha = 0.28f),
+                start = Offset(0f, h / 2),
+                end = Offset(w, h / 2),
+                strokeWidth = h,
+                cap = StrokeCap.Round
+            )
+
+            // 2. Buffer progress line (putih transparan)
+            if (bufferedFraction > 0f) {
+                drawLine(
+                    color = Color.White.copy(alpha = 0.55f),
+                    start = Offset(0f, h / 2),
+                    end = Offset(w * bufferedFraction, h / 2),
+                    strokeWidth = h,
+                    cap = StrokeCap.Round
+                )
+            }
+
+            // 3. Played progress line (YouTube Red: #FF0000)
+            drawLine(
+                color = Color(0xFFFF0000),
+                start = Offset(0f, h / 2),
+                end = Offset(w * playedFraction, h / 2),
+                strokeWidth = h,
+                cap = StrokeCap.Round
+            )
+
+            // 4. Scrubber Thumb (Titik bulat merah YouTube di ujung pemutaran)
+            val thumbRadius = if (isDragging) 6.5.dp.toPx() else 5.dp.toPx()
+            drawCircle(
+                color = Color(0xFFFF0000),
+                radius = thumbRadius,
+                center = Offset(w * playedFraction, h / 2)
+            )
+        }
+    }
 }
 
 @OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
@@ -117,10 +255,21 @@ fun PlayerScreen(
     var isBuffering by remember { mutableStateOf(true) }
     var playbackError by remember { mutableStateOf<String?>(null) }
 
-    // BARU: State kontrol Fullscreen & Mode Landscape
+    // State kontrol Fullscreen & Mode Landscape
     var isFullscreen by remember { mutableStateOf(false) }
 
-    // BARU: State pemilihan resolusi kualitas video
+    // State kontrol pemutaran video
+    var isPlaying by remember { mutableStateOf(true) }
+    var currentPosition by remember { mutableLongStateOf(0L) }
+    var duration by remember { mutableLongStateOf(0L) }
+    var bufferedPosition by remember { mutableLongStateOf(0L) }
+    var isSeeking by remember { mutableStateOf(false) }
+
+    // BARU: Logika Auto-Hide dan Visibility Kontrol 100% YouTube Style
+    var areControlsVisible by remember { mutableStateOf(true) }
+    var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    // State pemilihan resolusi kualitas video
     var selectedQuality by remember { mutableStateOf("Auto") }
     var showQualityDialog by remember { mutableStateOf(false) }
 
@@ -166,6 +315,8 @@ fun PlayerScreen(
     LaunchedEffect(video.id) {
         viewModel.loadVideo(video)
         selectedQuality = "Auto"
+        areControlsVisible = true
+        lastInteractionTime = System.currentTimeMillis()
     }
 
     // Factory HTTP DataSource dengan User-Agent & Referer YouTube resmi anti-403
@@ -183,7 +334,7 @@ fun PlayerScreen(
             )
     }
 
-    // ExoPlayer Lifecycle instance dengan Listener Error & Buffering
+    // ExoPlayer Lifecycle instance dengan Listener
     val exoPlayer = remember(context) {
         ExoPlayer.Builder(context).build().apply {
             playWhenReady = true
@@ -192,6 +343,13 @@ fun PlayerScreen(
 
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(playing: Boolean) {
+                isPlaying = playing
+                if (playing) {
+                    lastInteractionTime = System.currentTimeMillis()
+                }
+            }
+
             override fun onPlaybackStateChanged(playbackState: Int) {
                 when (playbackState) {
                     Player.STATE_BUFFERING -> {
@@ -200,9 +358,11 @@ fun PlayerScreen(
                     Player.STATE_READY -> {
                         isBuffering = false
                         playbackError = null
+                        duration = exoPlayer.duration.coerceAtLeast(0L)
                     }
                     Player.STATE_ENDED -> {
                         isBuffering = false
+                        areControlsVisible = true
                     }
                     Player.STATE_IDLE -> {}
                 }
@@ -221,6 +381,26 @@ fun PlayerScreen(
         }
     }
 
+    // Polling durasi dan posisi pemutaran saat video aktif
+    LaunchedEffect(exoPlayer, isPlaying) {
+        while (true) {
+            if (!isSeeking && isPlaying) {
+                currentPosition = exoPlayer.currentPosition.coerceAtLeast(0L)
+                bufferedPosition = exoPlayer.bufferedPosition.coerceAtLeast(0L)
+                duration = exoPlayer.duration.coerceAtLeast(0L)
+            }
+            delay(200)
+        }
+    }
+
+    // Logika Auto-Hide: kontrol memudar dan menghilang otomatis setelah 3 detik pemutaran tanpa sentuhan
+    LaunchedEffect(areControlsVisible, isPlaying, lastInteractionTime) {
+        if (areControlsVisible && isPlaying && !isSeeking) {
+            delay(3000)
+            areControlsVisible = false
+        }
+    }
+
     // Eksekusi pemutaran saat detail stream berhasil diekstrak
     val successDetails = (uiState as? PlayerUiState.Success)?.details
     LaunchedEffect(successDetails) {
@@ -228,21 +408,17 @@ fun PlayerScreen(
             playbackError = null
             isBuffering = true
 
-            // Konstruksi MediaSource berlapis (HLS Master -> Progressive Muxed -> Merged Video+Audio)
             val mediaSource: MediaSource? = try {
                 when {
-                    // 1. Jalur Utama: HLS Adaptive Master Playlist (Audio + Video terpadu semua resolusi)
                     !successDetails.hlsUrl.isNullOrBlank() -> {
                         val uri = successDetails.hlsUrl.removeSuffix("?")
                         HlsMediaSource.Factory(httpDataSourceFactory)
                             .createMediaSource(MediaItem.fromUri(uri))
                     }
-                    // 2. Jalur Muxed Progressive (Jika YouTube menyajikan MP4 gabungan)
                     successDetails.isProgressiveMuxed && !successDetails.videoUrl.isNullOrBlank() -> {
                         ProgressiveMediaSource.Factory(httpDataSourceFactory)
                             .createMediaSource(MediaItem.fromUri(successDetails.videoUrl))
                     }
-                    // 3. Jalur Merging MediaSource (Gabungkan Video 720p + Audio Opus/M4A)
                     !successDetails.videoUrl.isNullOrBlank() && !successDetails.audioUrl.isNullOrBlank() -> {
                         val vSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
                             .createMediaSource(MediaItem.fromUri(successDetails.videoUrl))
@@ -250,7 +426,6 @@ fun PlayerScreen(
                             .createMediaSource(MediaItem.fromUri(successDetails.audioUrl))
                         MergingMediaSource(vSource, aSource)
                     }
-                    // 4. Fallback ke URL video yang ada
                     !successDetails.videoUrl.isNullOrBlank() -> {
                         ProgressiveMediaSource.Factory(httpDataSourceFactory)
                             .createMediaSource(MediaItem.fromUri(successDetails.videoUrl))
@@ -298,14 +473,12 @@ fun PlayerScreen(
             else -> (resNumber * 16 / 9) to resNumber
         }
 
-        // Terapkan batasan resolusi di TrackSelectionParameters (bekerja otomatis pada HLS)
         exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
             .buildUpon()
             .setMaxVideoSize(width, height)
             .setMinVideoSize(width, height)
             .build()
 
-        // Jika bukan HLS dan tersedia stream langsung dengan resolusi tersebut, alihkan media source
         val directStreamUrl = successDetails?.resolutionStreams?.get(quality)
             ?: successDetails?.resolutionStreams?.get("${resNumber}p")
 
@@ -337,13 +510,12 @@ fun PlayerScreen(
             .fillMaxSize()
             .background(PureBlack)
     ) {
-        // BARU: Spacer pengaman status bar pada mode portrait.
-        // Mencegah tampilan jam, persentase baterai, dan sinyal menutupi video.
+        // Spacer pengaman status bar pada mode portrait
         if (!isFullscreen) {
             Spacer(modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
         }
 
-        // AREA 1: Video Player Surface (16:9 saat portrait, Fullscreen saat landscape)
+        // AREA 1: Video Player Surface
         Box(
             modifier = if (isFullscreen) {
                 Modifier
@@ -356,27 +528,19 @@ fun PlayerScreen(
                     .background(Color.Black)
             }
         ) {
-            // PlayerView selalu terpasang untuk menjaga Surface hardware decoding tetap siap
+            // DINONAKTIFKAN: useController = true bawaan ExoPlayer yang menyebabkan duplikasi tombol dan stiker permanen
+            // BARU: useController = false murni rendering video hardware, seluruh kontrol dikendalikan 100% Compose YouTube style
             AndroidView(
                 factory = { ctx ->
                     PlayerView(ctx).apply {
                         player = exoPlayer
-                        useController = true
-                        setShowNextButton(false)
-                        setShowPreviousButton(false)
-                        setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
+                        useController = false
                         setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
                         keepScreenOn = true
                         layoutParams = ViewGroup.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT
                         )
-                        // Sambungkan listener fullscreen bawaan PlayerView
-                        try {
-                            setFullscreenButtonClickListener {
-                                toggleFullscreen()
-                            }
-                        } catch (_: Throwable) {}
                     }
                 },
                 update = { playerView ->
@@ -449,93 +613,217 @@ fun PlayerScreen(
                 }
             }
 
-            // BARU: Bar Kontrol Bagian Atas Player (Back di kiri, Settings Kualitas & Fullscreen di kanan)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.TopCenter)
-                    .padding(8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Tombol Back di Pojok Kiri Atas Player
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.55f))
-                        .clickable {
-                            if (isFullscreen) toggleFullscreen() else onBack()
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    LucideArrowLeft(
-                        tint = IceWhite,
-                        size = 20.dp
-                    )
-                }
-
-                // Baris Tombol Aksi Kanan Atas: Settings Resolusi + Toggle Fullscreen
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Tombol Pengaturan Resolusi / Kualitas Video
-                    Row(
-                        modifier = Modifier
-                            .height(36.dp)
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(Color.Black.copy(alpha = 0.55f))
-                            .clickable { showQualityDialog = true }
-                            .padding(horizontal = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        LucideSettings(
-                            tint = IceWhite,
-                            size = 18.dp
-                        )
-                        Text(
-                            text = selectedQuality,
-                            color = IceWhite,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-
-                    // Tombol Toggle Fullscreen / Mode Landscape di Bar Atas
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(Color.Black.copy(alpha = 0.55f))
-                            .clickable { toggleFullscreen() },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (isFullscreen) {
-                            LucideMinimize(tint = IceWhite, size = 18.dp)
-                        } else {
-                            LucideMaximize(tint = IceWhite, size = 18.dp)
-                        }
-                    }
-                }
-            }
-
-            // BARU: Tombol Cepat Fullscreen di Pojok Kanan Bawah Player (Ergonomis untuk jangkauan jempol)
+            // Lapisan penangkap sentuhan untuk memunculkan / menyembunyikan kontrol video
             Box(
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(bottom = 12.dp, end = 12.dp)
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.60f))
-                    .clickable { toggleFullscreen() },
-                contentAlignment = Alignment.Center
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        areControlsVisible = !areControlsVisible
+                        if (areControlsVisible) {
+                            lastInteractionTime = System.currentTimeMillis()
+                        }
+                    }
+            )
+
+            // BARU: Kontrol Video 100% Persis Plek Ketiplek YouTube Mobile
+            // Muncul bersamaan saat diketuk, dan menghilang total (fade-out) bersamaan tanpa ada tombol tertinggal
+            AnimatedVisibility(
+                visible = areControlsVisible,
+                enter = fadeIn(tween(180)),
+                exit = fadeOut(tween(180)),
+                modifier = Modifier.fillMaxSize()
             ) {
-                if (isFullscreen) {
-                    LucideMinimize(tint = IceWhite, size = 20.dp)
-                } else {
-                    LucideMaximize(tint = IceWhite, size = 20.dp)
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.48f))
+                ) {
+                    // BARIS ATAS: Back Button di kiri, Settings Gear di kanan
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .align(Alignment.TopCenter)
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Tombol Back (Keluar fullscreen jika landscape, kembali ke beranda jika portrait)
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .clickable {
+                                    lastInteractionTime = System.currentTimeMillis()
+                                    if (isFullscreen) toggleFullscreen() else onBack()
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            LucideArrowLeft(
+                                tint = IceWhite,
+                                size = 22.dp
+                            )
+                        }
+
+                        // Tombol Settings Gear Tunggal di Kanan Atas (Buka Bottom Sheet Resolusi Video)
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .clickable {
+                                    lastInteractionTime = System.currentTimeMillis()
+                                    showQualityDialog = true
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            LucideSettings(
+                                tint = IceWhite,
+                                size = 22.dp
+                            )
+                        }
+                    }
+
+                    // KONTROL TENGAH: Rewind 10 Detik, Play / Pause Lingkaran, Forward 10 Detik
+                    Row(
+                        modifier = Modifier.align(Alignment.Center),
+                        horizontalArrangement = Arrangement.spacedBy(36.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Rewind 10s
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .clickable {
+                                    lastInteractionTime = System.currentTimeMillis()
+                                    exoPlayer.seekTo((exoPlayer.currentPosition - 10_000L).coerceAtLeast(0L))
+                                    currentPosition = exoPlayer.currentPosition
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            LucideRotateCcw10(
+                                tint = IceWhite,
+                                size = 36.dp
+                            )
+                        }
+
+                        // Play / Pause Circle
+                        Box(
+                            modifier = Modifier
+                                .size(60.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.55f))
+                                .clickable {
+                                    lastInteractionTime = System.currentTimeMillis()
+                                    if (exoPlayer.isPlaying) {
+                                        exoPlayer.pause()
+                                    } else {
+                                        exoPlayer.play()
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (isPlaying) {
+                                LucidePause(
+                                    tint = IceWhite,
+                                    size = 28.dp
+                                )
+                            } else {
+                                LucidePlay(
+                                    tint = IceWhite,
+                                    size = 28.dp
+                                )
+                            }
+                        }
+
+                        // Forward 10s
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .clickable {
+                                    lastInteractionTime = System.currentTimeMillis()
+                                    exoPlayer.seekTo((exoPlayer.currentPosition + 10_000L).coerceAtMost(duration))
+                                    currentPosition = exoPlayer.currentPosition
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            LucideRotateCw10(
+                                tint = IceWhite,
+                                size = 36.dp
+                            )
+                        }
+                    }
+
+                    // BARIS BAWAH: Seekbar Merah YouTube + Waktu + SATU Tombol Fullscreen Tunggal
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 4.dp)
+                    ) {
+                        // YouTube Red Seekbar
+                        YouTubeProgressBar(
+                            positionMs = currentPosition,
+                            durationMs = duration,
+                            bufferedMs = bufferedPosition,
+                            onSeek = { newPos ->
+                                lastInteractionTime = System.currentTimeMillis()
+                                exoPlayer.seekTo(newPos)
+                                currentPosition = newPos
+                            },
+                            onSeekingChange = { seeking ->
+                                isSeeking = seeking
+                                if (seeking) {
+                                    lastInteractionTime = System.currentTimeMillis()
+                                }
+                            },
+                            modifier = Modifier.padding(horizontal = 12.dp)
+                        )
+
+                        // Baris Info Durasi Waktu & Tombol Fullscreen Tunggal
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 14.dp, end = 8.dp, bottom = 2.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Penunjuk Waktu: misal "00:33 / 02:22"
+                            Text(
+                                text = "${formatTime(currentPosition)} / ${formatTime(duration)}",
+                                color = IceWhite,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+
+                            // SATU Tombol Fullscreen Tunggal di Kanan Bawah
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .clickable {
+                                        lastInteractionTime = System.currentTimeMillis()
+                                        toggleFullscreen()
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (isFullscreen) {
+                                    LucideMinimize(
+                                        tint = IceWhite,
+                                        size = 20.dp
+                                    )
+                                } else {
+                                    LucideMaximize(
+                                        tint = IceWhite,
+                                        size = 20.dp
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -662,7 +950,7 @@ fun PlayerScreen(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(20.dp))
                                 .background(Color(0xFF1F222B))
-                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
@@ -803,7 +1091,7 @@ fun PlayerScreen(
         }
     }
 
-    // BARU: Modal Bottom Sheet Pengaturan Resolusi / Kualitas Video
+    // Modal Bottom Sheet Pengaturan Resolusi / Kualitas Video
     if (showQualityDialog) {
         ModalBottomSheet(
             onDismissRequest = { showQualityDialog = false },

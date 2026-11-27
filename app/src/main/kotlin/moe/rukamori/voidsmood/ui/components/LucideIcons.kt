@@ -12,6 +12,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -156,6 +158,7 @@ fun LucideHistory(
     }
 }
 
+// BARU: Ikon Roda Gigi Settings YouTube resmi (lingkaran tengah dengan gerigi roda)
 @Composable
 fun LucideSettings(
     modifier: Modifier = Modifier,
@@ -167,9 +170,28 @@ fun LucideSettings(
         val w = this.size.width
         val h = this.size.height
         val stroke = strokeWidth.toPx()
+        val cx = w * 0.50f
+        val cy = h * 0.50f
 
-        drawCircle(tint, radius = w * 0.18f, center = Offset(w * 0.5f, h * 0.5f), style = Stroke(stroke))
-        drawCircle(tint, radius = w * 0.38f, center = Offset(w * 0.5f, h * 0.5f), style = Stroke(stroke))
+        // Lingkaran dalam & luar
+        drawCircle(tint, radius = w * 0.16f, center = Offset(cx, cy), style = Stroke(stroke))
+        drawCircle(tint, radius = w * 0.34f, center = Offset(cx, cy), style = Stroke(stroke))
+
+        // 6 gerigi gear melingkar
+        for (i in 0 until 6) {
+            val angle = (i * 60) * (Math.PI / 180.0)
+            val cos = Math.cos(angle).toFloat()
+            val sin = Math.sin(angle).toFloat()
+            val rInner = w * 0.32f
+            val rOuter = w * 0.44f
+            drawLine(
+                color = tint,
+                start = Offset(cx + cos * rInner, cy + sin * rInner),
+                end = Offset(cx + cos * rOuter, cy + sin * rOuter),
+                strokeWidth = stroke * 1.5f,
+                cap = StrokeCap.Round
+            )
+        }
     }
 }
 
@@ -266,7 +288,7 @@ fun LucideShare2(
 
         drawCircle(tint, radius = w * 0.12f, center = Offset(w * 0.75f, h * 0.25f), style = Stroke(stroke))
         drawCircle(tint, radius = w * 0.12f, center = Offset(w * 0.75f, h * 0.75f), style = Stroke(stroke))
-        drawCircle(tint, radius = w * 0.12f, center = Offset(w * 0.25f, h * 0.50f), style = Stroke(stroke))
+        drawCircle(tint, radius = w * 0.25f, center = Offset(w * 0.25f, h * 0.50f), style = Stroke(stroke))
 
         drawLine(tint, Offset(w * 0.35f, h * 0.44f), Offset(w * 0.65f, h * 0.31f), stroke, StrokeCap.Round)
         drawLine(tint, Offset(w * 0.35f, h * 0.56f), Offset(w * 0.65f, h * 0.69f), stroke, StrokeCap.Round)
@@ -407,5 +429,130 @@ fun LucideArrowUpLeft(
         drawLine(tint, Offset(w * 0.75f, h * 0.75f), Offset(w * 0.25f, h * 0.25f), stroke, StrokeCap.Round)
         drawLine(tint, Offset(w * 0.25f, h * 0.55f), Offset(w * 0.25f, h * 0.25f), stroke, StrokeCap.Round)
         drawLine(tint, Offset(w * 0.25f, h * 0.25f), Offset(w * 0.55f, h * 0.25f), stroke, StrokeCap.Round)
+    }
+}
+
+// BARU: Ikon Play Segitiga YouTube
+@Composable
+fun LucidePlay(
+    modifier: Modifier = Modifier,
+    tint: Color = Color.White,
+    size: Dp = 28.dp
+) {
+    Canvas(modifier = modifier.size(size)) {
+        val w = this.size.width
+        val h = this.size.height
+        val path = Path().apply {
+            moveTo(w * 0.32f, h * 0.22f)
+            lineTo(w * 0.78f, h * 0.50f)
+            lineTo(w * 0.32f, h * 0.78f)
+            close()
+        }
+        drawPath(path, tint)
+    }
+}
+
+// BARU: Ikon Pause Dua Garis Vertikal YouTube
+@Composable
+fun LucidePause(
+    modifier: Modifier = Modifier,
+    tint: Color = Color.White,
+    size: Dp = 28.dp,
+    strokeWidth: Dp = 3.5.dp
+) {
+    Canvas(modifier = modifier.size(size)) {
+        val w = this.size.width
+        val h = this.size.height
+        val stroke = strokeWidth.toPx()
+        drawLine(tint, Offset(w * 0.36f, h * 0.24f), Offset(w * 0.36f, h * 0.76f), stroke, StrokeCap.Round)
+        drawLine(tint, Offset(w * 0.64f, h * 0.24f), Offset(w * 0.64f, h * 0.76f), stroke, StrokeCap.Round)
+    }
+}
+
+// BARU: Ikon Rewind 10 Detik khas YouTube Mobile
+@Composable
+fun LucideRotateCcw10(
+    modifier: Modifier = Modifier,
+    tint: Color = Color.White,
+    size: Dp = 36.dp,
+    strokeWidth: Dp = 2.dp
+) {
+    Canvas(modifier = modifier.size(size)) {
+        val w = this.size.width
+        val h = this.size.height
+        val stroke = strokeWidth.toPx()
+
+        // Busur melingkar berlawanan arah jarum jam (270 derajat)
+        drawArc(
+            color = tint,
+            startAngle = 60f,
+            sweepAngle = 270f,
+            useCenter = false,
+            topLeft = Offset(w * 0.12f, h * 0.12f),
+            size = Size(w * 0.76f, h * 0.76f),
+            style = Stroke(stroke, cap = StrokeCap.Round)
+        )
+
+        // Kepala panah di ujung busur kiri atas
+        val arrow = Path().apply {
+            moveTo(w * 0.08f, h * 0.26f)
+            lineTo(w * 0.24f, h * 0.14f)
+            lineTo(w * 0.24f, h * 0.38f)
+            close()
+        }
+        drawPath(arrow, tint)
+
+        // Angka 10 di tengah busur
+        val paint = android.graphics.Paint().apply {
+            color = tint.toArgb()
+            textSize = h * 0.30f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            textAlign = android.graphics.Paint.Align.CENTER
+        }
+        drawContext.canvas.nativeCanvas.drawText("10", w * 0.50f, h * 0.60f, paint)
+    }
+}
+
+// BARU: Ikon Fast Forward 10 Detik khas YouTube Mobile
+@Composable
+fun LucideRotateCw10(
+    modifier: Modifier = Modifier,
+    tint: Color = Color.White,
+    size: Dp = 36.dp,
+    strokeWidth: Dp = 2.dp
+) {
+    Canvas(modifier = modifier.size(size)) {
+        val w = this.size.width
+        val h = this.size.height
+        val stroke = strokeWidth.toPx()
+
+        // Busur melingkar searah jarum jam (270 derajat)
+        drawArc(
+            color = tint,
+            startAngle = 120f,
+            sweepAngle = 270f,
+            useCenter = false,
+            topLeft = Offset(w * 0.12f, h * 0.12f),
+            size = Size(w * 0.76f, h * 0.76f),
+            style = Stroke(stroke, cap = StrokeCap.Round)
+        )
+
+        // Kepala panah di ujung busur kanan atas
+        val arrow = Path().apply {
+            moveTo(w * 0.92f, h * 0.26f)
+            lineTo(w * 0.76f, h * 0.14f)
+            lineTo(w * 0.76f, h * 0.38f)
+            close()
+        }
+        drawPath(arrow, tint)
+
+        // Angka 10 di tengah busur
+        val paint = android.graphics.Paint().apply {
+            color = tint.toArgb()
+            textSize = h * 0.30f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            textAlign = android.graphics.Paint.Align.CENTER
+        }
+        drawContext.canvas.nativeCanvas.drawText("10", w * 0.50f, h * 0.60f, paint)
     }
 }
