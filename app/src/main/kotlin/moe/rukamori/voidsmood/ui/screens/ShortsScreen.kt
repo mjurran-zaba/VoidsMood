@@ -59,6 +59,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.MediaSource
@@ -69,6 +71,7 @@ import coil3.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.rukamori.voidsmood.data.model.VideoItem
+import moe.rukamori.voidsmood.data.network.NetworkClient
 import moe.rukamori.voidsmood.data.network.NewPipeDownloader
 import moe.rukamori.voidsmood.data.repository.LocalLibraryRepository
 import moe.rukamori.voidsmood.data.repository.YouTubeRepository
@@ -98,19 +101,41 @@ fun ShortsScreen(
     var isLoadingMore by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    // BARU: Single Shared ExoPlayer instance di level ShortsScreen agar tidak terjadi decoder exhaustion dan saturasi bandwidth jaringan
-    val sharedExoPlayer = remember {
-        ExoPlayer.Builder(context).build().apply {
-            repeatMode = Player.REPEAT_MODE_ONE
-        }
+    // BARU: Fast-Start LoadControl khusus Shorts (hanya butuh buffer 600ms untuk langsung play tanpa buffering lama)
+    val shortsLoadControl = remember {
+        DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                /* minBufferMs = */ 8_000,
+                /* maxBufferMs = */ 20_000,
+                /* bufferForPlaybackMs = */ 600,
+                /* bufferForPlaybackAfterRebufferMs = */ 1_000
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
     }
 
+    // BARU: Single Shared ExoPlayer instance di level ShortsScreen agar tidak terjadi decoder exhaustion dan saturasi bandwidth jaringan
+    val sharedExoPlayer = remember {
+        ExoPlayer.Builder(context)
+            .setLoadControl(shortsLoadControl)
+            .build().apply {
+                repeatMode = Player.REPEAT_MODE_ONE
+            }
+    }
+
+    // DINONAKTIFKAN: DefaultHttpDataSource lama berbasis Java HttpURLConnection tanpa HTTP/2 multiplexing
+    // val httpDataSourceFactory = remember {
+    //     DefaultHttpDataSource.Factory()
+    //         .setUserAgent(NewPipeDownloader.DEFAULT_USER_AGENT)
+    //         .setAllowCrossProtocolRedirects(true)
+    //         .setConnectTimeoutMs(15000)
+    //         .setReadTimeoutMs(20000)
+    //         .setDefaultRequestProperties(mapOf("Referer" to "https://www.youtube.com/"))
+    // }
+    // BARU: OkHttpDataSource dengan persistent connection pooling HTTP/2 dari NetworkClient
     val httpDataSourceFactory = remember {
-        DefaultHttpDataSource.Factory()
+        OkHttpDataSource.Factory(NetworkClient.okHttpClient)
             .setUserAgent(NewPipeDownloader.DEFAULT_USER_AGENT)
-            .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(15000)
-            .setReadTimeoutMs(20000)
             .setDefaultRequestProperties(mapOf("Referer" to "https://www.youtube.com/"))
     }
 

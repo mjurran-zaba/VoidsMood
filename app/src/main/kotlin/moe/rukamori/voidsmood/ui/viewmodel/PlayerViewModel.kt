@@ -5,6 +5,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -61,7 +62,22 @@ class PlayerViewModel : ViewModel() {
 
     fun getOrCreateExoPlayer(context: Context): ExoPlayer {
         if (exoPlayerInstance == null) {
-            exoPlayerInstance = ExoPlayer.Builder(context.applicationContext).build().apply {
+            // DINONAKTIFKAN: ExoPlayer.Builder bawaan tanpa tuning LoadControl yang menyebabkan buffering lama
+            // exoPlayerInstance = ExoPlayer.Builder(context.applicationContext).build()
+            // BARU: DefaultLoadControl dengan buffer instan (800ms buffer awal) untuk menghilangkan slowly network
+            val fastStartLoadControl = DefaultLoadControl.Builder()
+                .setBufferDurationsMs(
+                    /* minBufferMs = */ 12_000,
+                    /* maxBufferMs = */ 30_000,
+                    /* bufferForPlaybackMs = */ 800,
+                    /* bufferForPlaybackAfterRebufferMs = */ 1_500
+                )
+                .setPrioritizeTimeOverSizeThresholds(true)
+                .build()
+
+            exoPlayerInstance = ExoPlayer.Builder(context.applicationContext)
+                .setLoadControl(fastStartLoadControl)
+                .build().apply {
                 playWhenReady = true
                 addListener(object : Player.Listener {
                     override fun onIsPlayingChanged(playing: Boolean) {

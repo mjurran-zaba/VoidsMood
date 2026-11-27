@@ -15,14 +15,21 @@ class NewPipeDownloader(
     proxy: Proxy? = null
 ) : Downloader() {
 
-    private val client = OkHttpClient.Builder()
-        .proxy(proxy ?: Proxy.NO_PROXY)
-        .retryOnConnectionFailure(true)
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
-        .callTimeout(45, TimeUnit.SECONDS)
-        .build()
+    // DINONAKTIFKAN: Instansiasi OkHttpClient lokal terisolasi tanpa sharing connection pool
+    // private val client = OkHttpClient.Builder()
+    //     .proxy(proxy ?: Proxy.NO_PROXY)
+    //     .retryOnConnectionFailure(true)
+    //     .connectTimeout(15, TimeUnit.SECONDS)
+    //     .readTimeout(30, TimeUnit.SECONDS)
+    //     .writeTimeout(30, TimeUnit.SECONDS)
+    //     .callTimeout(45, TimeUnit.SECONDS)
+    //     .build()
+    // BARU: Gunakan singleton NetworkClient.okHttpClient dengan persistent ConnectionPool bersama
+    private val client = if (proxy != null && proxy != Proxy.NO_PROXY) {
+        NetworkClient.okHttpClient.newBuilder().proxy(proxy).build()
+    } else {
+        NetworkClient.okHttpClient
+    }
 
     companion object {
         const val DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"

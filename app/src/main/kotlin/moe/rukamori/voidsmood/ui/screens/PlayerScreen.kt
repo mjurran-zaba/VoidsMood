@@ -77,6 +77,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.MediaSource
@@ -87,6 +88,7 @@ import coil3.compose.AsyncImage
 import kotlinx.coroutines.delay
 import moe.rukamori.voidsmood.data.model.VideoItem
 import moe.rukamori.voidsmood.data.model.VideoPlaybackDetails
+import moe.rukamori.voidsmood.data.network.NetworkClient
 import moe.rukamori.voidsmood.data.network.NewPipeDownloader
 import moe.rukamori.voidsmood.ui.components.LucideArrowLeft
 import moe.rukamori.voidsmood.ui.components.LucideCheck
@@ -359,13 +361,23 @@ fun PlayerScreen(
     //             )
     //         )
     // }
-    // BARU: Request properties bersih dengan Referer YouTube tanpa Origin header agar CDN video googlevideo.com tidak mengembalikan 403
+    // DINONAKTIFKAN: DefaultHttpDataSource berbasis HttpURLConnection yang membuka koneksi TCP/TLS baru berulang-ulang pada tiap chunk video
+    // val httpDataSourceFactory = remember {
+    //     DefaultHttpDataSource.Factory()
+    //         .setUserAgent(NewPipeDownloader.DEFAULT_USER_AGENT)
+    //         .setAllowCrossProtocolRedirects(true)
+    //         .setConnectTimeoutMs(15000)
+    //         .setReadTimeoutMs(20000)
+    //         .setDefaultRequestProperties(
+    //             mapOf(
+    //                 "Referer" to "https://www.youtube.com/"
+    //             )
+    //         )
+    // }
+    // BARU: OkHttpDataSource dengan HTTP/2 connection pooling terpusat dari NetworkClient, streaming chunk instan tanpa handshake ulang
     val httpDataSourceFactory = remember {
-        DefaultHttpDataSource.Factory()
+        OkHttpDataSource.Factory(NetworkClient.okHttpClient)
             .setUserAgent(NewPipeDownloader.DEFAULT_USER_AGENT)
-            .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(15000)
-            .setReadTimeoutMs(20000)
             .setDefaultRequestProperties(
                 mapOf(
                     "Referer" to "https://www.youtube.com/"

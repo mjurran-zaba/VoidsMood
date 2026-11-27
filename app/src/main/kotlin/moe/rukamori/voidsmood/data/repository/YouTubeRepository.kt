@@ -1,10 +1,12 @@
 // meticulous and honest
 package moe.rukamori.voidsmood.data.repository
 
+import android.util.LruCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.rukamori.voidsmood.data.model.VideoItem
 import moe.rukamori.voidsmood.data.model.VideoPlaybackDetails
+import moe.rukamori.voidsmood.data.network.NetworkClient
 import moe.rukamori.voidsmood.data.network.NewPipeDownloader
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -39,6 +41,10 @@ object YouTubeRepository {
     )
 
     private var currentSeedIndex = 0
+
+    // BARU: In-memory LRU Cache untuk menyimpan 50 detail stream video terakhir
+    // Memungkinkan pemutaran ulang atau swipe kembali di Shorts/Home/Explore tanpa request jaringan ulang (0 ms latency)
+    private val playbackDetailsCache = LruCache<String, VideoPlaybackDetails>(50)
 
     fun initIfNeeded() {
         if (!isInitialized) {
@@ -427,7 +433,12 @@ object YouTubeRepository {
             }
         } catch (_: Exception) {}
 
-        // Fallback langsung ke endpoint Google YouTube Suggest queries via HTTP
+        // DINONAKTIFKAN: OkHttpClient.Builder() baru pada setiap request ketikan saran pencarian
+        // val client = OkHttpClient.Builder()
+        //     .connectTimeout(5, TimeUnit.SECONDS)
+        //     .readTimeout(5, TimeUnit.SECONDS)
+        //     .build()
+        // BARU: Gunakan singleton NetworkClient.okHttpClient bersama dengan connection pool terpadu
         try {
             val encoded = URLEncoder.encode(query, "UTF-8")
             val url = "https://suggestqueries.google.com/complete/search?client=youtube&jsonp=JP&ds=yt&gl=ID&hl=id&q=$encoded"
@@ -435,11 +446,7 @@ object YouTubeRepository {
                 .url(url)
                 .header("User-Agent", NewPipeDownloader.DEFAULT_USER_AGENT)
                 .build()
-            val client = OkHttpClient.Builder()
-                .connectTimeout(5, TimeUnit.SECONDS)
-                .readTimeout(5, TimeUnit.SECONDS)
-                .build()
-            val response = client.newCall(request).execute()
+            val response = NetworkClient.okHttpClient.newCall(request).execute()
             val body = response.body?.string() ?: ""
             if (body.startsWith("JP(") && body.endsWith(")")) {
                 val jsonStr = body.substring(3, body.length - 1)
@@ -463,14 +470,22 @@ object YouTubeRepository {
     suspend fun getVideoPlaybackDetails(videoIdOrUrl: String): Result<VideoPlaybackDetails> = withContext(Dispatchers.IO) {
         try {
             initIfNeeded()
-            val url = if (videoIdOrUrl.startsWith("http")) videoIdOrUrl else "https://www.youtube.com/watch?v=$videoIdOrUrl"
-            val info = StreamInfo.getInfo(ServiceList.YouTube, url)
-
             val videoId = if (videoIdOrUrl.contains("v=")) {
                 videoIdOrUrl.substringAfter("v=").substringBefore("&")
-            } else {
+            } else if (videoIdOrUrl.startsWith("http")) {
                 videoIdOrUrl.substringAfterLast("/")
+            } else {
+                videoIdOrUrl
             }
+
+            // BARU: Kembalikan dari cache memori jika detail video sudah pernah diekstrak (0 ms latensi jaringan)
+            val cached = playbackDetailsCache.get(videoId)
+            if (cached != null) {
+                return@withContext Result.success(cached)
+            }
+
+            val url = if (videoIdOrUrl.startsWith("http")) videoIdOrUrl else "https://www.youtube.com/watch?v=$videoIdOrUrl"
+            val info = StreamInfo.getInfo(ServiceList.YouTube, url)
 
             val thumb = info.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
             val avatar = info.uploaderAvatars.firstOrNull()?.url
@@ -621,6 +636,9 @@ object YouTubeRepository {
                 availableResolutions = finalResolutions,
                 resolutionStreams = resMap
             )
+
+            // Simpan ke in-memory cache untuk akses instan selanjutnya
+            playbackDetailsCache.put(videoId, details)
 
             Result.success(details)
         } catch (e: Exception) {
