@@ -25,6 +25,7 @@ import org.schabi.newpipe.extractor.localization.ContentCountry
 import org.schabi.newpipe.extractor.localization.Localization
 import org.schabi.newpipe.extractor.search.SearchInfo
 import org.schabi.newpipe.extractor.stream.AudioStream
+import org.schabi.newpipe.extractor.stream.AudioTrackType
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.extractor.stream.StreamType
@@ -233,7 +234,15 @@ object YouTubeRepository {
         // Prioritas 1: Track Audio Asli / Original dari kreator
         val originalStreams = audioStreams.filter { stream ->
             val trackName = stream.audioTrackName?.lowercase() ?: ""
-            trackName.contains("original") || trackName.contains("default") || trackName.contains("yokuqala")
+            val isOriginalType = try {
+                stream.audioTrackType == AudioTrackType.ORIGINAL
+            } catch (_: Throwable) {
+                false
+            }
+            isOriginalType ||
+                trackName.contains("original") ||
+                trackName.contains("default") ||
+                trackName.contains("yokuqala")
         }
 
         val candidateStreams = if (originalStreams.isNotEmpty()) {
@@ -243,9 +252,14 @@ object YouTubeRepository {
             val detectedCountry = detectUserCountry()
             val targetLang = countryToLanguageCode(detectedCountry)
             val locationMatchedStreams = audioStreams.filter { stream ->
-                val locale = stream.audioLocale?.lowercase() ?: ""
+                // DINONAKTIFKAN: stream.audioLocale?.lowercase() yang error kompilasi karena audioLocale bertipe java.util.Locale
+                // val locale = stream.audioLocale?.lowercase() ?: ""
+                // BARU: Ekstraksi bahasa dari objek java.util.Locale (stream.audioLocale.language)
+                val localeLang = stream.audioLocale?.language?.lowercase() ?: ""
+                val localeTag = stream.audioLocale?.toLanguageTag()?.lowercase() ?: ""
                 val trackId = stream.audioTrackId?.lowercase() ?: ""
-                locale == targetLang || (targetLang == "id" && locale == "in") ||
+                localeLang == targetLang || (targetLang == "id" && localeLang == "in") ||
+                        localeTag.startsWith(targetLang) ||
                         trackId.startsWith(targetLang) || (targetLang == "id" && trackId.startsWith("in"))
             }
 
