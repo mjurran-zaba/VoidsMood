@@ -184,8 +184,8 @@ class ShortsViewModel : ViewModel() {
             player.pause()
             player.stop()
             player.clearMediaItems()
-            // BARU: Bersihkan surface video lama dari memori grafis saat berpindah item Shorts agar frame video sebelumnya terhapus total
-            player.clearVideoSurface()
+            // DINONAKTIFKAN: player.clearVideoSurface() yang melepaskan (detach) SurfaceView dari ExoPlayer sehingga layar menjadi blank permanen pada video berikutnya
+            // player.clearVideoSurface()
 
             val detailsResult = withContext(Dispatchers.IO) {
                 YouTubeRepository.getVideoPlaybackDetails(video.id)

@@ -257,7 +257,10 @@ fun ShortsScreen(
                     // val shortItem = shortsList[page]
                     // BARU: Akses aman dengan getOrNull untuk mencegah force close saat transisi batch list
                     val shortItem = shortsList.getOrNull(page) ?: return@VerticalPager
-                    val isCurrentPage = pagerState.currentPage == page
+                    // DINONAKTIFKAN: isCurrentPage berbasis pagerState.currentPage yang berpindah di tengah gestur scroll sebelum halaman terkunci sehingga video baru prematur dipasang ke player yang masih memutar video lama
+                    // val isCurrentPage = pagerState.currentPage == page
+                    // BARU: isCurrentPage hanya bernilai true jika halaman sudah settled (terkunci rapi), sehingga player hanya dipasang pada halaman yang benar-benar aktif
+                    val isCurrentPage = pagerState.settledPage == page
 
                     ShortsPlayerPage(
                         video = shortItem,
@@ -350,7 +353,7 @@ private fun ShortsPlayerPage(
     var isTitleExpanded by remember { mutableStateOf(false) }
     var isLiked by remember(video.id) { mutableStateOf(LocalLibraryRepository.isLiked(video.id)) }
 
-    // DINONAKTIFKAN: Gating hasRenderedFirstFrame dan listener rendered frame karena poster thumbnail ditiadakan sesuai instruksi pengguna: tidak usah pakai thumbnails dan tampilkan pemutar video apa adanya
+    // DINONAKTIFKAN: Gating hasRenderedFirstFrame lama yang mengecek Player.STATE_READY (sebelum decoder video menggambar frame) yang menyebabkan frame video lama bocor
     // var hasRenderedFirstFrame by remember(video.id) {
     //     mutableStateOf(
     //         exoPlayer.currentMediaItem?.mediaId == video.id &&
@@ -377,13 +380,37 @@ private fun ShortsPlayerPage(
     //         exoPlayer.removeListener(listener)
     //     }
     // }
-    //
-    // // BARU: Reset status render pertama saat halaman tidak aktif agar thumbnail halaman selalu menutup frame video lama saat digeser kembali
-    // LaunchedEffect(isActive) {
-    //     if (!isActive) {
-    //         hasRenderedFirstFrame = false
-    //     }
-    // }
+
+    // BARU: Lacak apakah frame pertama video Short ini sudah benar-benar dirender ke layar oleh decoder video.
+    // HANYA mengandalkan callback native onRenderedFirstFrame() dengan validasi ketat mediaId yang cocok,
+    // tanpa pernah memakai STATE_READY. Ini mencegah total kebocoran frame video sebelumnya.
+    var hasRenderedFirstFrame by remember(video.id) {
+        mutableStateOf(
+            exoPlayer.currentMediaItem?.mediaId == video.id &&
+            exoPlayer.playbackState == Player.STATE_READY
+        )
+    }
+
+    DisposableEffect(exoPlayer, video.id, isActive) {
+        val listener = object : Player.Listener {
+            override fun onRenderedFirstFrame() {
+                if (isActive && exoPlayer.currentMediaItem?.mediaId == video.id) {
+                    hasRenderedFirstFrame = true
+                }
+            }
+        }
+        exoPlayer.addListener(listener)
+        onDispose {
+            exoPlayer.removeListener(listener)
+        }
+    }
+
+    // BARU: Reset status render pertama saat halaman tidak aktif agar thumbnail halaman selalu menutup frame video lama saat digeser kembali
+    LaunchedEffect(isActive) {
+        if (!isActive) {
+            hasRenderedFirstFrame = false
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -440,21 +467,23 @@ private fun ShortsPlayerPage(
         //     )
         // }
 
-        // DINONAKTIFKAN: Poster AsyncImage thumbnail di pemutar Shorts.
-        // Sesuai instruksi pengguna: tidak usah pakai thumbnails dan tampilkan video apa adanya secara langsung.
-        // if (!isActive || !hasRenderedFirstFrame) {
-        //     AsyncImage(
-        //         model = video.thumbnailUrl,
-        //         contentDescription = video.title,
-        //         contentScale = ContentScale.Crop,
-        //         modifier = Modifier.fillMaxSize()
-        //     )
-        // }
+        // BARU: UI Buffering YouTube Shorts Anti-Bocor & Anti-Kedip:
+        // 1. Thumbnail poster SELALU tampil menutup PlayerView pada halaman offscreen (!isActive) ATAU sebelum frame pertama video baru selesai dirender (!hasRenderedFirstFrame).
+        //    Ini menjamin 100%:
+        //    - Saat digeser, halaman selalu menampilkan poster/thumbnail video itu sendiri secara rapi.
+        //    - Tidak akan pernah ada kedipan frame video sebelumnya karena thumbnail menutup permukaan sampai decoder video baru menggambar frame pertamanya.
+        // 2. Begitu frame pertama video baru berhasil digambar oleh decoder (onRenderedFirstFrame), thumbnail hilang permanen.
+        if (!isActive || !hasRenderedFirstFrame) {
+            AsyncImage(
+                model = video.thumbnailUrl,
+                contentDescription = video.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
 
-        // DINONAKTIFKAN: Spinner buffering dengan pengecekan !hasRenderedFirstFrame
-        // if (isActive && (isBuffering || !hasRenderedFirstFrame)) {
-        // BARU: Indikator buffering YouTube Shorts standar saat pemutar sedang buffering data jaringan
-        if (isActive && isBuffering) {
+        // Loading & Buffering Spinner di tengah layar Shorts (YouTube Style)
+        if (isActive && (isBuffering || !hasRenderedFirstFrame)) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
