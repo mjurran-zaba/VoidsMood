@@ -16,12 +16,19 @@ val hasReleaseSigning = releaseKeystoreFile.exists() || System.getenv("STORE_PAS
 
 android {
     namespace = "moe.rukamori.voidsmood"
-    compileSdk = 35
+    // DINONAKTIFKAN: compileSdk 35 menyebabkan error dependensi CheckAarMetadata karena activity-compose 1.13.0 butuh SDK 36/37
+    // compileSdk = 35
+    // BARU: Gunakan compileSdk 37 dan compileSdkMinor 2 sesuai standar VoidTune
+    compileSdk = 37
+    compileSdkMinor = 2
 
     defaultConfig {
         applicationId = "moe.rukamori.voidsmood"
         minSdk = 26
-        targetSdk = 35
+        // DINONAKTIFKAN: targetSdk 35
+        // targetSdk = 35
+        // BARU: targetSdk 37
+        targetSdk = 37
         versionCode = 1
         versionName = "0.0.1"
 
