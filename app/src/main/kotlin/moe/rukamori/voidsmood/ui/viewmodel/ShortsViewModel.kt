@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.rukamori.voidsmood.data.model.VideoItem
+import moe.rukamori.voidsmood.data.network.MediaCacheManager
 import moe.rukamori.voidsmood.data.network.NetworkClient
 import moe.rukamori.voidsmood.data.network.NewPipeDownloader
 import moe.rukamori.voidsmood.data.repository.LocalLibraryRepository
@@ -65,19 +66,34 @@ class ShortsViewModel : ViewModel() {
     private val _currentPlayingVideoId = MutableStateFlow<String?>(null)
     val currentPlayingVideoId: StateFlow<String?> = _currentPlayingVideoId.asStateFlow()
     private var pageOffset = 1
+    private var appContext: Context? = null
 
     init {
         loadShorts(refresh = false)
     }
 
     fun getOrCreateShortsPlayer(context: Context): ExoPlayer {
+        appContext = context.applicationContext
         if (exoPlayerInstance == null) {
+            // DINONAKTIFKAN: Konfigurasi buffer lama (bufferForPlaybackMs = 600ms, minBufferMs = 8000ms) yang lambat untuk feed Shorts
+            // val shortsLoadControl = DefaultLoadControl.Builder()
+            //     .setBufferDurationsMs(
+            //         /* minBufferMs = */ 8_000,
+            //         /* maxBufferMs = */ 20_000,
+            //         /* bufferForPlaybackMs = */ 600,
+            //         /* bufferForPlaybackAfterRebufferMs = */ 1_000
+            //     )
+            //     .setPrioritizeTimeOverSizeThresholds(true)
+            //     .build()
+
+            // BARU: Fast-Start LoadControl ala TikTok/Instagram Reels:
+            // bufferForPlaybackMs diturunkan ke 250ms agar pemutaran video langsung dimulai seketika saat segmen data awal tiba
             val shortsLoadControl = DefaultLoadControl.Builder()
                 .setBufferDurationsMs(
-                    /* minBufferMs = */ 8_000,
-                    /* maxBufferMs = */ 20_000,
-                    /* bufferForPlaybackMs = */ 600,
-                    /* bufferForPlaybackAfterRebufferMs = */ 1_000
+                    /* minBufferMs = */ 3_000,
+                    /* maxBufferMs = */ 15_000,
+                    /* bufferForPlaybackMs = */ 250,
+                    /* bufferForPlaybackAfterRebufferMs = */ 500
                 )
                 .setPrioritizeTimeOverSizeThresholds(true)
                 .build()
@@ -216,7 +232,15 @@ class ShortsViewModel : ViewModel() {
                     _shorts.value = updated
                 }
 
-                val httpDataSourceFactory = OkHttpDataSource.Factory(NetworkClient.mediaStreamingOkHttpClient)
+                // DINONAKTIFKAN: httpDataSourceFactory tanpa cache disk lokal yang menyebabkan re-download setiap kali loop atau swipe kembali
+                // val httpDataSourceFactory = OkHttpDataSource.Factory(NetworkClient.mediaStreamingOkHttpClient)
+                //     .setUserAgent(NewPipeDownloader.DEFAULT_USER_AGENT)
+                //     .setDefaultRequestProperties(mapOf("Referer" to "https://www.youtube.com/"))
+                // BARU: DataSourceFactory dengan lapisan SimpleCache 250 MB LRU disk storage (mengadopsi VoidTune & PipePipe).
+                // Video yang sudah diputar atau di-looping langsung dibaca dari disk dengan latensi 0 ms tanpa memakan kuota internet
+                val dataSourceFactory = appContext?.let { ctx ->
+                    MediaCacheManager.createCacheDataSourceFactory(ctx)
+                } ?: OkHttpDataSource.Factory(NetworkClient.mediaStreamingOkHttpClient)
                     .setUserAgent(NewPipeDownloader.DEFAULT_USER_AGENT)
                     .setDefaultRequestProperties(mapOf("Referer" to "https://www.youtube.com/"))
 
@@ -242,18 +266,18 @@ class ShortsViewModel : ViewModel() {
                 // BARU: MediaItem dengan setMediaId(video.id) eksplisit untuk pelacakan identitas media yang akurat
                 val mediaSource: MediaSource? = when {
                     details.isProgressiveMuxed && !details.videoUrl.isNullOrBlank() -> {
-                        ProgressiveMediaSource.Factory(httpDataSourceFactory)
+                        ProgressiveMediaSource.Factory(dataSourceFactory)
                             .createMediaSource(MediaItem.Builder().setUri(details.videoUrl).setMediaId(video.id).build())
                     }
                     !details.videoUrl.isNullOrBlank() && !details.audioUrl.isNullOrBlank() -> {
-                        val vSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
+                        val vSource = ProgressiveMediaSource.Factory(dataSourceFactory)
                             .createMediaSource(MediaItem.Builder().setUri(details.videoUrl).setMediaId(video.id).build())
-                        val aSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
+                        val aSource = ProgressiveMediaSource.Factory(dataSourceFactory)
                             .createMediaSource(MediaItem.Builder().setUri(details.audioUrl).setMediaId(video.id).build())
                         MergingMediaSource(vSource, aSource)
                     }
                     !details.videoUrl.isNullOrBlank() -> {
-                        ProgressiveMediaSource.Factory(httpDataSourceFactory)
+                        ProgressiveMediaSource.Factory(dataSourceFactory)
                             .createMediaSource(MediaItem.Builder().setUri(details.videoUrl).setMediaId(video.id).build())
                     }
                     else -> null
@@ -270,13 +294,42 @@ class ShortsViewModel : ViewModel() {
         }
     }
 
-    // BARU: Pre-fetching video Shorts berikutnya ke LRU Cache di background (0 ms jeda saat swipe)
+    // DINONAKTIFKAN: prefetchUpcomingShorts lama yang hanya mengambil metadata tanpa pra-unduh data stream video
+    // private fun prefetchUpcomingShorts(currentIndex: Int) {
+    //     val list = _shorts.value
+    //     list.getOrNull(currentIndex + 1)?.let { nextVid ->
+    //         viewModelScope.launch(Dispatchers.IO) {
+    //             try {
+    //                 YouTubeRepository.getVideoPlaybackDetails(nextVid.id)
+    //             } catch (_: Exception) {}
+    //         }
+    //     }
+    //     list.getOrNull(currentIndex + 2)?.let { nextNextVid ->
+    //         viewModelScope.launch(Dispatchers.IO) {
+    //             try {
+    //                 YouTubeRepository.getVideoPlaybackDetails(nextNextVid.id)
+    //             } catch (_: Exception) {}
+    //         }
+    //     }
+    // }
+    // BARU: Pre-caching multi-level ala Instagram Reels & TikTok (Metadata + 512 KB stream head video berikutnya ke disk cache)
     private fun prefetchUpcomingShorts(currentIndex: Int) {
         val list = _shorts.value
+        val context = appContext
         list.getOrNull(currentIndex + 1)?.let { nextVid ->
             viewModelScope.launch(Dispatchers.IO) {
                 try {
-                    YouTubeRepository.getVideoPlaybackDetails(nextVid.id)
+                    val result = YouTubeRepository.getVideoPlaybackDetails(nextVid.id)
+                    result.onSuccess { details ->
+                        if (context != null) {
+                            details.videoUrl?.let { vUrl ->
+                                MediaCacheManager.prefetchStreamHead(context, vUrl, 512 * 1024L)
+                            }
+                            details.audioUrl?.let { aUrl ->
+                                MediaCacheManager.prefetchStreamHead(context, aUrl, 256 * 1024L)
+                            }
+                        }
+                    }
                 } catch (_: Exception) {}
             }
         }
