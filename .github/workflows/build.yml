@@ -45,7 +45,8 @@ jobs:
         shell: bash
         run: |
           chmod +x ./gradlew
-          ./gradlew assembleRelease --stacktrace
+          # BARU: Gunakan --no-daemon agar proses build tidak terputus di runner GitHub Actions
+          ./gradlew assembleRelease --no-daemon --stacktrace
         env:
           STORE_PASSWORD: voidsmood123
           KEY_ALIAS: voidsmood
