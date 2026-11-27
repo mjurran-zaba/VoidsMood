@@ -123,6 +123,8 @@ fun ShortsScreen(
     val isBuffering by viewModel.isBuffering.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
+    // BARU: Ambil ID video yang sedang aktif dimuat oleh ExoPlayer untuk sinkronisasi rendering anti-kedip
+    val currentPlayingVideoId by viewModel.currentPlayingVideoId.collectAsState()
 
     val sharedExoPlayer = remember(context) {
         viewModel.getOrCreateShortsPlayer(context)
@@ -265,6 +267,7 @@ fun ShortsScreen(
                     ShortsPlayerPage(
                         video = shortItem,
                         isActive = isCurrentPage,
+                        currentPlayingVideoId = currentPlayingVideoId,
                         exoPlayer = sharedExoPlayer,
                         isPlaying = isPlaying,
                         isBuffering = isBuffering,
@@ -342,6 +345,7 @@ fun ShortsScreen(
 private fun ShortsPlayerPage(
     video: VideoItem,
     isActive: Boolean,
+    currentPlayingVideoId: String?,
     exoPlayer: ExoPlayer,
     isPlaying: Boolean,
     isBuffering: Boolean,
@@ -352,6 +356,9 @@ private fun ShortsPlayerPage(
     var showDoubleTapLike by remember { mutableStateOf(false) }
     var isTitleExpanded by remember { mutableStateOf(false) }
     var isLiked by remember(video.id) { mutableStateOf(LocalLibraryRepository.isLiked(video.id)) }
+
+    // BARU: PlayerView HANYA boleh dipasang jika halaman ini aktif DAN media yang sedang dimuat ExoPlayer sudah benar-benar cocok dengan video ini!
+    val isMediaLoaded = isActive && (currentPlayingVideoId == video.id)
 
     // DINONAKTIFKAN: Gating hasRenderedFirstFrame lama yang mengecek Player.STATE_READY (sebelum decoder video menggambar frame) yang menyebabkan frame video lama bocor
     // var hasRenderedFirstFrame by remember(video.id) {
@@ -391,10 +398,10 @@ private fun ShortsPlayerPage(
         )
     }
 
-    DisposableEffect(exoPlayer, video.id, isActive) {
+    DisposableEffect(exoPlayer, video.id, isMediaLoaded) {
         val listener = object : Player.Listener {
             override fun onRenderedFirstFrame() {
-                if (isActive && exoPlayer.currentMediaItem?.mediaId == video.id) {
+                if (isMediaLoaded && exoPlayer.currentMediaItem?.mediaId == video.id) {
                     hasRenderedFirstFrame = true
                 }
             }
@@ -432,8 +439,9 @@ private fun ShortsPlayerPage(
                 )
             }
     ) {
-        // Lapisan Video: Hanya pasang PlayerView pada halaman yang sedang aktif di layar
-        if (isActive) {
+        // Lapisan Video: Hanya pasang PlayerView jika halaman ini aktif DAN media yang dimuat ExoPlayer adalah video ini!
+        // Ini menjamin 100% PlayerView TIDAK AKAN PERNAH dipasang saat player masih menahan frame video sebelumnya.
+        if (isMediaLoaded) {
             AndroidView(
                 factory = { ctx ->
                     PlayerView(ctx).apply {
@@ -473,7 +481,7 @@ private fun ShortsPlayerPage(
         //    - Saat digeser, halaman selalu menampilkan poster/thumbnail video itu sendiri secara rapi.
         //    - Tidak akan pernah ada kedipan frame video sebelumnya karena thumbnail menutup permukaan sampai decoder video baru menggambar frame pertamanya.
         // 2. Begitu frame pertama video baru berhasil digambar oleh decoder (onRenderedFirstFrame), thumbnail hilang permanen.
-        if (!isActive || !hasRenderedFirstFrame) {
+        if (!isMediaLoaded || !hasRenderedFirstFrame) {
             AsyncImage(
                 model = video.thumbnailUrl,
                 contentDescription = video.title,

@@ -375,16 +375,18 @@ object YouTubeRepository {
 
     private var shortsSeedIndex = 0
 
-    // BARU: Ekstraksi Shorts langsung dari InnerTube API yang membaca wadah 'gridShelfViewModel' & 'reelShelfRenderer'.
-    // Ini mengembalikan 25-35 video Shorts vertikal murni per kueri (mengatasi bug NewPipeExtractor 0.27.1
-    // yang membuang rak shorts dan hanya menyisakan 2-3 video).
+    // DINONAKTIFKAN: fetchShortsFromInnerTube lama yang menggunakan clientName WEB sehingga YouTube hanya mengembalikan shortsLockupViewModel tanpa nama dan avatar kreator
+    // private fun fetchShortsFromInnerTube(query: String): List<VideoItem> { ... clientName: "WEB" ... }
+    // BARU: fetchShortsFromInnerTube dengan clientName MWEB yang membaca wadah videoWithContextRenderer.
+    // Menyediakan nama kanal asli (shortBylineText) dan URL avatar kreator asli (channelThumbnail) sejak awal,
+    // sehingga nama kreator tidak lagi dimulai sebagai "YouTube Creator" dan tidak berkedip/berubah saat video diputar.
     private fun fetchShortsFromInnerTube(query: String): List<VideoItem> {
         try {
             val jsonContext = JSONObject().apply {
                 put("client", JSONObject().apply {
                     put("hl", "en")
                     put("gl", "US")
-                    put("clientName", "WEB")
+                    put("clientName", "MWEB")
                     put("clientVersion", "2.20240101.00.00")
                 })
             }
@@ -396,18 +398,16 @@ object YouTubeRepository {
             val requestBody = jsonBody.toString().toRequestBody(mediaType)
             val request = Request.Builder()
                 .url("https://www.youtube.com/youtubei/v1/search?prettyPrint=false")
-                .header("User-Agent", NewPipeDownloader.DEFAULT_USER_AGENT)
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
                 .post(requestBody)
                 .build()
 
             val response = NetworkClient.okHttpClient.newCall(request).execute()
             val raw = response.body?.string() ?: return emptyList()
             val root = JSONObject(raw)
-            val contents = root.optJSONObject("contents")
-                ?.optJSONObject("twoColumnSearchResultsRenderer")
-                ?.optJSONObject("primaryContents")
-                ?.optJSONObject("sectionListRenderer")
-                ?.optJSONArray("contents") ?: return emptyList()
+            val contents = root.optJSONObject("contents")?.optJSONObject("sectionListRenderer")?.optJSONArray("contents")
+                ?: root.optJSONObject("contents")?.optJSONObject("twoColumnSearchResultsRenderer")?.optJSONObject("primaryContents")?.optJSONObject("sectionListRenderer")?.optJSONArray("contents")
+                ?: return emptyList()
 
             val resultList = mutableListOf<VideoItem>()
 
@@ -419,7 +419,46 @@ object YouTubeRepository {
                 for (j in 0 until secContents.length()) {
                     val it = secContents.optJSONObject(j) ?: continue
 
-                    // 1. Ekstraksi dari gridShelfViewModel (rak Shorts utama di YouTube Web)
+                    // 1. Ekstraksi dari videoWithContextRenderer (Format MWEB Shorts langsung dengan nama kreator & avatar asli)
+                    val vwc = it.optJSONObject("videoWithContextRenderer")
+                    if (vwc != null) {
+                        val vidId = vwc.optString("videoId")
+                        val headline = vwc.optJSONObject("headline")
+                        val title = headline?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                            ?: headline?.optString("simpleText", "Untitled Shorts")
+                            ?: "Untitled Shorts"
+                        val byline = vwc.optJSONObject("shortBylineText")
+                        val creatorName = byline?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                            ?: "YouTube Creator"
+                        val thumbObj = vwc.optJSONObject("thumbnail")
+                        val thumb = thumbObj?.optJSONArray("thumbnails")?.optJSONObject(0)?.optString("url")
+                            ?: "https://i.ytimg.com/vi/$vidId/hqdefault.jpg"
+                        val avatarObj = vwc.optJSONObject("channelThumbnail")
+                            ?.optJSONObject("channelThumbnailWithLinkRenderer")
+                            ?.optJSONObject("thumbnail")
+                        val avatar = avatarObj?.optJSONArray("thumbnails")?.optJSONObject(0)?.optString("url")
+                        val views = vwc.optJSONObject("shortViewCountText")?.optString("simpleText", "") ?: ""
+
+                        if (vidId.length == 11) {
+                            resultList.add(
+                                VideoItem(
+                                    id = vidId,
+                                    url = "https://www.youtube.com/shorts/$vidId",
+                                    title = title,
+                                    uploaderName = creatorName,
+                                    uploaderAvatarUrl = avatar,
+                                    thumbnailUrl = thumb,
+                                    durationSeconds = 30L,
+                                    durationText = "0:30",
+                                    viewCount = 0L,
+                                    viewCountText = views,
+                                    uploadDateText = ""
+                                )
+                            )
+                        }
+                    }
+
+                    // 2. Ekstraksi dari gridShelfViewModel (rak Shorts desktop fallback)
                     val gridShelf = it.optJSONObject("gridShelfViewModel")
                     if (gridShelf != null) {
                         val gridContents = gridShelf.optJSONArray("contents")
@@ -436,26 +475,9 @@ object YouTubeRepository {
 
                                 val creatorName = sl.optJSONObject("shortBylineText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
                                     ?: sl.optJSONObject("channelTitleText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
-                                    ?: "YouTube Shorts"
+                                    ?: "YouTube Creator"
 
                                 if (vidId.length == 11) {
-                                    // DINONAKTIFKAN: Nama uploader hardcoded "YouTube Creator" yang menyebabkan semua video Shorts bernama sama
-                                    // resultList.add(
-                                    //     VideoItem(
-                                    //         id = vidId,
-                                    //         url = "https://www.youtube.com/shorts/$vidId",
-                                    //         title = title,
-                                    //         uploaderName = "YouTube Creator",
-                                    //         uploaderAvatarUrl = null,
-                                    //         thumbnailUrl = thumb,
-                                    //         durationSeconds = 30L,
-                                    //         durationText = "0:30",
-                                    //         viewCount = 0L,
-                                    //         viewCountText = views,
-                                    //         uploadDateText = ""
-                                    //     )
-                                    // )
-                                    // BARU: Menggunakan creatorName hasil ekstraksi field shortBylineText / channelTitleText asli
                                     resultList.add(
                                         VideoItem(
                                             id = vidId,
@@ -476,7 +498,7 @@ object YouTubeRepository {
                         }
                     }
 
-                    // 2. Ekstraksi dari reelShelfRenderer (rak Reel / Shorts format alternatif)
+                    // 3. Ekstraksi dari reelShelfRenderer (rak Reel / Shorts format alternatif)
                     val reelShelf = it.optJSONObject("reelShelfRenderer")
                     if (reelShelf != null) {
                         val items = reelShelf.optJSONArray("items")
@@ -491,26 +513,9 @@ object YouTubeRepository {
                                 val thumb = thumbs?.optJSONObject(0)?.optString("url") ?: "https://i.ytimg.com/vi/$vidId/hqdefault.jpg"
                                 val reelCreator = reel.optJSONObject("shortBylineText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
                                     ?: reel.optJSONObject("channelTitleText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
-                                    ?: "YouTube Shorts"
+                                    ?: "YouTube Creator"
 
                                 if (vidId.length == 11) {
-                                    // DINONAKTIFKAN: Nama uploader hardcoded "YouTube Creator" yang menyebabkan semua video Shorts bernama sama
-                                    // resultList.add(
-                                    //     VideoItem(
-                                    //         id = vidId,
-                                    //         url = "https://www.youtube.com/shorts/$vidId",
-                                    //         title = title,
-                                    //         uploaderName = "YouTube Creator",
-                                    //         uploaderAvatarUrl = null,
-                                    //         thumbnailUrl = thumb,
-                                    //         durationSeconds = 30L,
-                                    //         durationText = "0:30",
-                                    //         viewCount = 0L,
-                                    //         viewCountText = views,
-                                    //         uploadDateText = ""
-                                    //     )
-                                    // )
-                                    // BARU: Menggunakan reelCreator hasil ekstraksi field shortBylineText / channelTitleText asli
                                     resultList.add(
                                         VideoItem(
                                             id = vidId,

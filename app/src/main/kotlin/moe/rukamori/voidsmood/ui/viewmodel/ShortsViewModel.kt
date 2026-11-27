@@ -58,7 +58,12 @@ class ShortsViewModel : ViewModel() {
     val isBuffering: StateFlow<Boolean> = _isBuffering.asStateFlow()
 
     private var exoPlayerInstance: ExoPlayer? = null
-    private var currentPlayingVideoId: String? = null
+    // DINONAKTIFKAN: private var currentPlayingVideoId: String? = null yang tidak reaktif terhadap recomposition Compose
+    // private var currentPlayingVideoId: String? = null
+    // BARU: StateFlow reaktif ID video yang sedang dimuat dan diputar di ExoPlayer,
+    // memungkinkan PlayerView hanya terpasang jika mediaId ExoPlayer sudah cocok dengan halaman yang aktif
+    private val _currentPlayingVideoId = MutableStateFlow<String?>(null)
+    val currentPlayingVideoId: StateFlow<String?> = _currentPlayingVideoId.asStateFlow()
     private var pageOffset = 1
 
     init {
@@ -172,14 +177,17 @@ class ShortsViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.Main) {
             val player = exoPlayerInstance ?: return@launch
 
-            if (currentPlayingVideoId == video.id && player.playbackState == Player.STATE_READY) {
+            if (_currentPlayingVideoId.value == video.id && player.playbackState == Player.STATE_READY) {
                 player.play()
                 return@launch
             }
 
-            currentPlayingVideoId = video.id
             LocalLibraryRepository.addToHistory(video)
             _isBuffering.value = true
+
+            // BARU: Reset _currentPlayingVideoId ke null seketika saat pergantian video dimulai
+            // sehingga PlayerView pada halaman baru TIDAK menempel ke player sebelum media barunya selesai disiapkan
+            _currentPlayingVideoId.value = null
 
             player.pause()
             player.stop()
@@ -255,6 +263,8 @@ class ShortsViewModel : ViewModel() {
                     player.setMediaSource(mediaSource)
                     player.prepare()
                     player.play()
+                    // BARU: Set ID video yang sedang diputar setelah media source baru berhasil dipasang ke player
+                    _currentPlayingVideoId.value = video.id
                 }
             }
         }
