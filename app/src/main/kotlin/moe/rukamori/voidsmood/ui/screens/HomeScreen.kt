@@ -109,19 +109,20 @@ private fun SuccessFeedView(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(PolarCyan)
-                    )
+                    // DINONAKTIFKAN: Titik dekoratif cyan 6.dp (dilarang oleh aturan anti-slop)
+                    // Box(
+                    //     modifier = Modifier
+                    //         .size(6.dp)
+                    //         .clip(CircleShape)
+                    //         .background(PolarCyan)
+                    // )
+                    // BARU: Tipografi judul murni tanpa dot artifisial
                     Text(
                         text = if (isSearching) "Hasil: \"$query\"" else "Sedang Tren",
                         color = IceWhite,
-                        fontSize = 17.sp,
+                        fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -172,9 +173,9 @@ private fun SuccessFeedView(
             }
         }
 
-        // Bottom Spacer untuk clearance navigasi sistem
+        // Bottom Spacer untuk clearance Floating AppleBottomNavigationBar
         item {
-            Spacer(modifier = Modifier.height(72.dp))
+            Spacer(modifier = Modifier.height(100.dp))
         }
     }
 }

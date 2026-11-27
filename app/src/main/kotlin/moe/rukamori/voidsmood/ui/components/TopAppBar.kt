@@ -119,19 +119,20 @@ fun VoidsTopAppBar(
             } else {
                 // VoidsMood Brand Monolith
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(PolarCyan)
-                    )
+                    // DINONAKTIFKAN: Titik dekoratif cyan 8.dp di samping brand (dilarang oleh aturan anti-slop)
+                    // Box(
+                    //     modifier = Modifier
+                    //         .size(8.dp)
+                    //         .clip(CircleShape)
+                    //         .background(PolarCyan)
+                    // )
+                    // BARU: Tipografi brand bersih dan kokoh tanpa dot dekoratif
                     Text(
                         text = "VoidsMood",
                         color = IceWhite,
-                        fontSize = 19.sp,
+                        fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 0.5.sp,
                         fontFamily = FontFamily.SansSerif

@@ -180,14 +180,10 @@ object YouTubeRepository {
                     )
                 }
 
-            val details = VideoPlaybackDetails(
-                video = baseVideo,
-                hlsUrl = cleanHls,
-                videoUrl = selectedVideoUrl,
-                audioUrl = selectedAudioUrl,
-                isProgressiveMuxed = (muxedProgressive != null),
-                isLive = !info.hlsUrl.isNullOrBlank(),
-                description = info.description?.content ?: "",
+            // DINONAKTIFKAN: Raw description yang meloloskan tag HTML <br> dan entitas HTML
+            // description = info.description?.content ?: "",
+            // BARU: Pembersihan teks deskripsi video secara menyeluruh dari tag HTML <br>, <p>, anchor, dan entitas HTML
+            description = cleanHtmlDescription(info.description?.content ?: ""),
                 subscriberCountText = if (info.uploaderSubscriberCount > 0) "${VideoItem.formatCount(info.uploaderSubscriberCount)} subscriber" else "",
                 likeCountText = if (info.likeCount > 0) VideoItem.formatCount(info.likeCount) else "Suka",
                 dislikeCountText = if (info.dislikeCount > 0) VideoItem.formatCount(info.dislikeCount) else "",
@@ -198,5 +194,25 @@ object YouTubeRepository {
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    // BARU: Fungsi pembersih tag HTML dan pemformat teks deskripsi YouTube
+    // Mengubah <br> menjadi newline dan membersihkan entitas &amp;, &quot;, dsb.
+    fun cleanHtmlDescription(raw: String): String {
+        if (raw.isBlank()) return ""
+        return raw
+            .replace(Regex("(?i)<br\\s*/?>"), "\n")
+            .replace(Regex("(?i)</?p\\s*>"), "\n\n")
+            .replace(Regex("(?i)<a\\s+[^>]*href=\"([^\"]*)\"[^>]*>(.*?)</a>"), "$2 ($1)")
+            .replace(Regex("<[^>]+>"), "")
+            .replace("&amp;", "&")
+            .replace("&quot;", "\"")
+            .replace("&apos;", "'")
+            .replace("&#39;", "'")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&nbsp;", " ")
+            .replace(Regex("\n{3,}"), "\n\n")
+            .trim()
     }
 }

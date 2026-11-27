@@ -498,7 +498,11 @@ fun PlayerScreen(
                 Spacer(modifier = Modifier.height(14.dp))
 
                 // Kotak Deskripsi Video (Expandable)
-                if (successDetails?.description?.isNotEmpty() == true) {
+                // BARU: Deskripsi bersih dengan pembersihan tag HTML ganda dan tipografi rapi
+                val cleanDescriptionText = remember(successDetails?.description) {
+                    YouTubeRepository.cleanHtmlDescription(successDetails?.description ?: "")
+                }
+                if (cleanDescriptionText.isNotEmpty()) {
                     var isExpanded by remember { mutableStateOf(false) }
                     Box(
                         modifier = Modifier
@@ -519,10 +523,10 @@ fun PlayerScreen(
                                 modifier = Modifier.padding(bottom = 4.dp)
                             )
                             Text(
-                                text = successDetails.description,
-                                color = TextMuted,
+                                text = cleanDescriptionText,
+                                color = Color(0xFFC7CBD8),
                                 fontSize = 12.sp,
-                                lineHeight = 17.sp,
+                                lineHeight = 18.sp,
                                 maxLines = if (isExpanded) Int.MAX_VALUE else 3,
                                 overflow = TextOverflow.Ellipsis
                             )
