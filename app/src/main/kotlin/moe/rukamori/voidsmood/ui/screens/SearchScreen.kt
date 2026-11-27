@@ -5,7 +5,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,7 +23,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -33,6 +31,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,16 +44,21 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import moe.rukamori.voidsmood.data.repository.LocalLibraryRepository
 import moe.rukamori.voidsmood.data.repository.YouTubeRepository
 import moe.rukamori.voidsmood.ui.components.LucideArrowLeft
 import moe.rukamori.voidsmood.ui.components.LucideArrowUpLeft
+import moe.rukamori.voidsmood.ui.components.LucideHistory
 import moe.rukamori.voidsmood.ui.components.LucideSearch
 import moe.rukamori.voidsmood.ui.components.LucideX
 import moe.rukamori.voidsmood.ui.theme.GlassBorder
@@ -64,19 +68,21 @@ import moe.rukamori.voidsmood.ui.theme.PolarCyan
 import moe.rukamori.voidsmood.ui.theme.PureBlack
 import moe.rukamori.voidsmood.ui.theme.TextMuted
 
-// BARU: Layer Pencarian Penuh YouTube Style dengan animasi slide-to-left mulus
-// Menyediakan live search suggestions real-time dari YouTube saat pengguna mengetik
+// BARU: Layer Pencarian Penuh YouTube Style dengan riwayat penelusuran lokal permanen,
+// penyorotan teks kelanjutan tebal (highlight bolding), dan tombol salin ↖ tanpa emoji
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SearchScreen(
     onClose: () -> Unit,
     onSearch: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    initialQuery: String = ""
 ) {
-    var query by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf(initialQuery) }
     var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
+    val searchHistory by LocalLibraryRepository.searchHistory.collectAsState()
 
     // Tangani gesture / tombol back Android agar layer pencarian menutup dengan halus
     BackHandler(onBack = onClose)
@@ -88,10 +94,10 @@ fun SearchScreen(
         keyboardController?.show()
     }
 
-    // Ambil saran pencarian real-time dari YouTube (debounced 100ms)
+    // Ambil saran pencarian real-time dari YouTube (debounced 120ms)
     LaunchedEffect(query) {
         if (query.isNotBlank()) {
-            delay(100)
+            delay(120)
             suggestions = YouTubeRepository.getSearchSuggestions(query)
         } else {
             suggestions = emptyList()
@@ -100,14 +106,16 @@ fun SearchScreen(
 
     val trendingTopics = remember {
         listOf(
-            "Video Viral Indonesia",
             "Musik Indonesia Populer",
+            "Video Viral",
             "Trending Gaming",
             "Podcast Indonesia",
-            "Berita Hari Ini",
+            "Berita Terkini",
             "Gameplay Terbaru",
             "Film Pendek",
-            "Komedi Lucu"
+            "Teknologi dan Gadget",
+            "Sains dan Edukasi",
+            "Otomotif"
         )
     }
 
@@ -177,9 +185,11 @@ fun SearchScreen(
                     cursorBrush = SolidColor(PolarCyan),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = KeyboardActions(onSearch = {
-                        if (query.isNotBlank()) {
+                        val trimmed = query.trim()
+                        if (trimmed.isNotBlank()) {
+                            LocalLibraryRepository.saveSearchQuery(trimmed)
                             keyboardController?.hide()
-                            onSearch(query.trim())
+                            onSearch(trimmed)
                         }
                     }),
                     modifier = Modifier
@@ -216,7 +226,7 @@ fun SearchScreen(
                 .background(Color(0xFF1E212E))
         )
 
-        // Konten Hasil Saran Pencarian (Suggestions) atau Topik Tren Populer
+        // FASE 3: Konten Hasil Saran Pencarian (Suggestions) saat pengguna sedang mengetik
         if (query.isNotBlank() && suggestions.isNotEmpty()) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize()
@@ -229,6 +239,7 @@ fun SearchScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
+                                LocalLibraryRepository.saveSearchQuery(suggestionText)
                                 keyboardController?.hide()
                                 onSearch(suggestionText)
                             }
@@ -242,16 +253,14 @@ fun SearchScreen(
 
                         Spacer(modifier = Modifier.width(16.dp))
 
-                        Text(
-                            text = suggestionText,
-                            color = IceWhite,
-                            fontSize = 15.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                        // Penyorotan Teks: Bagian yang diketik redup, kelanjutan saran dicetak tebal
+                        HighlightedSuggestionText(
+                            fullText = suggestionText,
+                            query = query,
                             modifier = Modifier.weight(1f)
                         )
 
-                        // Tombol Panah Diagonal (Menyisipkan teks saran ke dalam field input seperti YouTube)
+                        // Tombol Panah Serong (Menyalin saran ke dalam teks input tanpa submit)
                         Box(
                             modifier = Modifier
                                 .size(36.dp)
@@ -269,8 +278,107 @@ fun SearchScreen(
                     }
                 }
             }
+        } else if (query.isEmpty() && searchHistory.isNotEmpty()) {
+            // FASE 2A: Tampilan Status Idle saat belum mengetik - Menampilkan Riwayat Penelusuran Terakhir
+            LazyColumn(
+                modifier = Modifier.fillMaxSize()
+            ) {
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Riwayat Penelusuran",
+                            color = TextMuted,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+
+                        Text(
+                            text = "Hapus Semua",
+                            color = PolarCyan,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.clickable {
+                                LocalLibraryRepository.clearSearchHistory()
+                            }
+                        )
+                    }
+                }
+
+                items(
+                    items = searchHistory,
+                    key = { it }
+                ) { historyText ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                LocalLibraryRepository.saveSearchQuery(historyText)
+                                keyboardController?.hide()
+                                onSearch(historyText)
+                            }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        LucideHistory(
+                            tint = Color(0xFF7E8496),
+                            size = 18.dp
+                        )
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Text(
+                            text = historyText,
+                            color = IceWhite,
+                            fontSize = 15.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        // Tombol Hapus item spesifik
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .clickable {
+                                    LocalLibraryRepository.deleteSearchQuery(historyText)
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            LucideX(
+                                tint = Color(0xFF7E8496),
+                                size = 16.dp
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(4.dp))
+
+                        // Tombol Panah Serong (Salin ke kotak input)
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .clickable {
+                                    query = historyText
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            LucideArrowUpLeft(
+                                tint = Color(0xFF7E8496),
+                                size = 18.dp
+                            )
+                        }
+                    }
+                }
+            }
         } else {
-            // Tampilan saat belum ada teks pencarian: Topik Populer yang sering dicari
+            // FASE 2B: Tampilan jika Riwayat Penelusuran masih kosong: Deretan Topik Populer
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -296,6 +404,7 @@ fun SearchScreen(
                                 .background(Color(0xFF1A1D27))
                                 .border(1.dp, GlassBorder, RoundedCornerShape(16.dp))
                                 .clickable {
+                                    LocalLibraryRepository.saveSearchQuery(topic)
                                     keyboardController?.hide()
                                     onSearch(topic)
                                 }
@@ -314,3 +423,51 @@ fun SearchScreen(
         }
     }
 }
+
+// BARU: Penyorotan teks cerdas (Highlighting)
+// Kata kunci yang diketik pengguna ditampilkan redup, sementara prediksi kelanjutan kata dicetak tebal
+@Composable
+private fun HighlightedSuggestionText(
+    fullText: String,
+    query: String,
+    modifier: Modifier = Modifier
+) {
+    val annotatedString = remember(fullText, query) {
+        val q = query.trim()
+        val index = if (q.isNotEmpty()) fullText.indexOf(q, ignoreCase = true) else -1
+        buildAnnotatedString {
+            if (index >= 0) {
+                val prefix = fullText.substring(0, index)
+                val match = fullText.substring(index, index + q.length)
+                val suffix = fullText.substring(index + q.length)
+
+                if (prefix.isNotEmpty()) {
+                    withStyle(SpanStyle(color = IceWhite.copy(alpha = 0.60f), fontWeight = FontWeight.Normal)) {
+                        append(prefix)
+                    }
+                }
+                withStyle(SpanStyle(color = IceWhite.copy(alpha = 0.60f), fontWeight = FontWeight.Normal)) {
+                    append(match)
+                }
+                if (suffix.isNotEmpty()) {
+                    withStyle(SpanStyle(color = IceWhite, fontWeight = FontWeight.Bold)) {
+                        append(suffix)
+                    }
+                }
+            } else {
+                withStyle(SpanStyle(color = IceWhite, fontWeight = FontWeight.Normal)) {
+                    append(fullText)
+                }
+            }
+        }
+    }
+
+    Text(
+        text = annotatedString,
+        fontSize = 15.sp,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier
+    )
+}
+

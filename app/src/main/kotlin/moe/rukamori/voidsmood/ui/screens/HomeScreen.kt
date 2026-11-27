@@ -106,6 +106,20 @@ private fun SuccessFeedView(
     val listState = rememberLazyListState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
 
+    var selectedFilter by remember { mutableStateOf("Semua") }
+    val filterOptions = listOf("Semua", "Video", "Shorts")
+
+    val displayedVideos = remember(videos, isSearching, selectedFilter) {
+        if (!isSearching) videos
+        else {
+            when (selectedFilter) {
+                "Video" -> videos.filter { it.durationSeconds > 90L || it.durationSeconds <= 0L }
+                "Shorts" -> videos.filter { it.durationSeconds in 1..90L }
+                else -> videos
+            }
+        }
+    }
+
     // DINONAKTIFKAN: LaunchedEffect(shouldLoadMore) yang terkunci (deadlock) jika sempat gagal atau pengguna tetap di dasar list
     // val shouldLoadMore by remember {
     //     derivedStateOf {
@@ -145,39 +159,69 @@ private fun SuccessFeedView(
         // Hanya tampilkan baris pencarian jika sedang dalam mode search
         if (isSearching) {
             item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text(
-                        text = "Hasil: \"$query\"",
-                        color = IceWhite,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-
-                    Box(
+                    Row(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(Color(0xFF1E222D))
-                            .clickable(onClick = onClearSearch)
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Kembali ke Beranda",
-                            color = PolarCyan,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
+                            text = "Hasil: \"$query\"",
+                            color = IceWhite,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
                         )
+
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color(0xFF1E222D))
+                                .clickable(onClick = onClearSearch)
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = "Kembali ke Beranda",
+                                color = PolarCyan,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    // BARU: Bilah Kapsul Filter (Semua, Video, Shorts) tanpa emoji
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        filterOptions.forEach { filter ->
+                            val isSelected = selectedFilter == filter
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(if (isSelected) PolarCyan else Color(0xFF1B1E29))
+                                    .border(1.dp, if (isSelected) PolarCyan else GlassBorder, RoundedCornerShape(12.dp))
+                                    .clickable { selectedFilter = filter }
+                                    .padding(horizontal = 14.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = filter,
+                                    color = if (isSelected) PureBlack else IceWhite,
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
 
-        if (videos.isEmpty()) {
+        if (displayedVideos.isEmpty()) {
             item {
                 Box(
                     modifier = Modifier
@@ -194,7 +238,7 @@ private fun SuccessFeedView(
             }
         } else {
             items(
-                items = videos,
+                items = displayedVideos,
                 key = { it.id }
             ) { video ->
                 VideoCard(

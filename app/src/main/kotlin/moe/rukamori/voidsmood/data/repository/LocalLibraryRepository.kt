@@ -19,6 +19,7 @@ object LocalLibraryRepository {
     private const val KEY_HISTORY = "history_videos"
     private const val KEY_LIKED = "liked_videos"
     private const val KEY_WATCH_LATER = "watch_later_videos"
+    private const val KEY_SEARCH_HISTORY = "search_history_queries"
 
     private var prefs: SharedPreferences? = null
 
@@ -30,6 +31,9 @@ object LocalLibraryRepository {
 
     private val _watchLater = MutableStateFlow<List<VideoItem>>(emptyList())
     val watchLater: StateFlow<List<VideoItem>> = _watchLater.asStateFlow()
+
+    private val _searchHistory = MutableStateFlow<List<String>>(emptyList())
+    val searchHistory: StateFlow<List<String>> = _searchHistory.asStateFlow()
 
     fun init(context: Context) {
         if (prefs == null) {
@@ -43,6 +47,33 @@ object LocalLibraryRepository {
         _history.value = loadList(p.getString(KEY_HISTORY, null))
         _liked.value = loadList(p.getString(KEY_LIKED, null))
         _watchLater.value = loadList(p.getString(KEY_WATCH_LATER, null))
+        _searchHistory.value = loadStringList(p.getString(KEY_SEARCH_HISTORY, null))
+    }
+
+    // BARU: Menyimpan kueri pencarian ke riwayat lokal (maksimal 20 item, deduplikasi, urutan terbaru di atas)
+    fun saveSearchQuery(query: String) {
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) return
+        val current = _searchHistory.value.toMutableList()
+        current.removeAll { it.equals(trimmed, ignoreCase = true) }
+        current.add(0, trimmed)
+        val capped = current.take(20)
+        _searchHistory.value = capped
+        saveStringList(KEY_SEARCH_HISTORY, capped)
+    }
+
+    // BARU: Menghapus satu entri dari riwayat pencarian
+    fun deleteSearchQuery(query: String) {
+        val current = _searchHistory.value.toMutableList()
+        current.removeAll { it.equals(query, ignoreCase = true) }
+        _searchHistory.value = current
+        saveStringList(KEY_SEARCH_HISTORY, current)
+    }
+
+    // BARU: Menghapus seluruh riwayat pencarian
+    fun clearSearchHistory() {
+        _searchHistory.value = emptyList()
+        prefs?.edit()?.remove(KEY_SEARCH_HISTORY)?.apply()
     }
 
     fun addToHistory(video: VideoItem) {
@@ -137,6 +168,26 @@ object LocalLibraryRepository {
                         uploadDateText = obj.optString("uploadDateText")
                     )
                 )
+            }
+        } catch (_: Exception) {}
+        return list
+    }
+
+    private fun saveStringList(key: String, list: List<String>) {
+        val p = prefs ?: return
+        val array = JSONArray()
+        list.forEach { array.put(it) }
+        p.edit().putString(key, array.toString()).apply()
+    }
+
+    private fun loadStringList(rawJson: String?): List<String> {
+        if (rawJson.isNullOrBlank()) return emptyList()
+        val list = mutableListOf<String>()
+        try {
+            val array = JSONArray(rawJson)
+            for (i in 0 until array.length()) {
+                val item = array.optString(i)
+                if (item.isNotBlank()) list.add(item)
             }
         } catch (_: Exception) {}
         return list

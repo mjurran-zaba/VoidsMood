@@ -142,6 +142,16 @@ class MainActivity : ComponentActivity() {
                 // State kontrol kemunculan layer pencarian penuh dengan animasi slide-to-left
                 var isSearchActive by remember { mutableStateOf(false) }
 
+                // State reaktif pencarian beranda
+                val homeState by homeViewModel.uiState.collectAsState()
+                val isHomeSearching = (homeState as? HomeUiState.Success)?.isSearching == true
+                val currentSearchQuery = if (isHomeSearching) (homeState as? HomeUiState.Success)?.query.orEmpty() else ""
+
+                // BARU: Jika pengguna sedang melihat hasil pencarian di tab HOME, tombol Back mengembalikan ke feed Beranda terlebih dahulu
+                BackHandler(enabled = currentTab == NavigationTab.HOME && isHomeSearching && !isSearchActive && playerMode != PlayerMode.FULL) {
+                    homeViewModel.loadTrending(forceReload = false)
+                }
+
                 // DINONAKTIFKAN: Belum ada penanganan tombol Back saat berada di luar tab HOME sehingga aplikasi langsung keluar
                 // BARU: Tangani tombol Back fisik/gesture di tab Shorts, Explore, atau Library agar kembali ke tab HOME terlebih dahulu
                 BackHandler(enabled = currentTab != NavigationTab.HOME && !isSearchActive && playerMode != PlayerMode.FULL) {
@@ -307,6 +317,7 @@ class MainActivity : ComponentActivity() {
                         ) {
                             SearchScreen(
                                 onClose = { isSearchActive = false },
+                                initialQuery = currentSearchQuery,
                                 onSearch = { query ->
                                     isSearchActive = false
                                     currentTab = NavigationTab.HOME
