@@ -184,6 +184,8 @@ class ShortsViewModel : ViewModel() {
             player.pause()
             player.stop()
             player.clearMediaItems()
+            // BARU: Bersihkan surface video lama dari memori grafis saat berpindah item Shorts agar frame video sebelumnya terhapus total
+            player.clearVideoSurface()
 
             val detailsResult = withContext(Dispatchers.IO) {
                 YouTubeRepository.getVideoPlaybackDetails(video.id)
@@ -210,21 +212,41 @@ class ShortsViewModel : ViewModel() {
                     .setUserAgent(NewPipeDownloader.DEFAULT_USER_AGENT)
                     .setDefaultRequestProperties(mapOf("Referer" to "https://www.youtube.com/"))
 
+                // DINONAKTIFKAN: Pembuatan MediaItem tanpa pelacakan mediaId eksplisit
+                // val mediaSource: MediaSource? = when {
+                //     details.isProgressiveMuxed && !details.videoUrl.isNullOrBlank() -> {
+                //         ProgressiveMediaSource.Factory(httpDataSourceFactory)
+                //             .createMediaSource(MediaItem.fromUri(details.videoUrl))
+                //     }
+                //     !details.videoUrl.isNullOrBlank() && !details.audioUrl.isNullOrBlank() -> {
+                //         val vSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
+                //             .createMediaSource(MediaItem.fromUri(details.videoUrl))
+                //         val aSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
+                //             .createMediaSource(MediaItem.fromUri(details.audioUrl))
+                //         MergingMediaSource(vSource, aSource)
+                //     }
+                //     !details.videoUrl.isNullOrBlank() -> {
+                //         ProgressiveMediaSource.Factory(httpDataSourceFactory)
+                //             .createMediaSource(MediaItem.fromUri(details.videoUrl))
+                //     }
+                //     else -> null
+                // }
+                // BARU: MediaItem dengan setMediaId(video.id) eksplisit untuk pelacakan identitas media yang akurat
                 val mediaSource: MediaSource? = when {
                     details.isProgressiveMuxed && !details.videoUrl.isNullOrBlank() -> {
                         ProgressiveMediaSource.Factory(httpDataSourceFactory)
-                            .createMediaSource(MediaItem.fromUri(details.videoUrl))
+                            .createMediaSource(MediaItem.Builder().setUri(details.videoUrl).setMediaId(video.id).build())
                     }
                     !details.videoUrl.isNullOrBlank() && !details.audioUrl.isNullOrBlank() -> {
                         val vSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
-                            .createMediaSource(MediaItem.fromUri(details.videoUrl))
+                            .createMediaSource(MediaItem.Builder().setUri(details.videoUrl).setMediaId(video.id).build())
                         val aSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
-                            .createMediaSource(MediaItem.fromUri(details.audioUrl))
+                            .createMediaSource(MediaItem.Builder().setUri(details.audioUrl).setMediaId(video.id).build())
                         MergingMediaSource(vSource, aSource)
                     }
                     !details.videoUrl.isNullOrBlank() -> {
                         ProgressiveMediaSource.Factory(httpDataSourceFactory)
-                            .createMediaSource(MediaItem.fromUri(details.videoUrl))
+                            .createMediaSource(MediaItem.Builder().setUri(details.videoUrl).setMediaId(video.id).build())
                     }
                     else -> null
                 }

@@ -19,15 +19,21 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
@@ -42,6 +48,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -153,6 +160,13 @@ class MainActivity : ComponentActivity() {
                 val homeState by homeViewModel.uiState.collectAsState()
                 val isHomeSearching = (homeState as? HomeUiState.Success)?.isSearching == true
                 val currentSearchQuery = if (isHomeSearching) (homeState as? HomeUiState.Success)?.query.orEmpty() else ""
+
+                // BARU: Jika bottom navigation sedang disembunyikan (isNavigationVisible == false),
+                // gestur/tombol Back fisik pertama akan memunculkan kembali bottom navigation bar terlebih dahulu,
+                // sehingga pengguna tidak keluar atau berganti tab tanpa sengaja
+                BackHandler(enabled = !isNavigationVisible && !isSearchActive && playerMode != PlayerMode.FULL) {
+                    isNavigationVisible = true
+                }
 
                 // BARU: Jika pengguna sedang melihat hasil pencarian di tab HOME, tombol Back mengembalikan ke feed Beranda terlebih dahulu
                 BackHandler(enabled = currentTab == NavigationTab.HOME && isHomeSearching && !isSearchActive && playerMode != PlayerMode.FULL) {
@@ -315,22 +329,62 @@ class MainActivity : ComponentActivity() {
                                             }
                                     )
 
-                                    // BARU: Indikator/area sentuh di bagian bawah saat navigasi disembunyikan agar pengguna dapat memunculkannya kembali dengan swipe up atau ketukan
-                                    if (!isNavigationVisible) {
+                                    // DINONAKTIFKAN: Area sentuh 28.dp di bagian paling bawah layar tanpa windowInsetsPadding yang bertabrakan dengan gestur Back to Home bawaan sistem operasi Android
+                                    // if (!isNavigationVisible) {
+                                    //     Box(
+                                    //         modifier = Modifier
+                                    //             .align(Alignment.BottomCenter)
+                                    //             .fillMaxWidth()
+                                    //             .height(28.dp)
+                                    //             .pointerInput(Unit) {
+                                    //                 detectVerticalDragGestures { _, dragAmount ->
+                                    //                     if (dragAmount < -10f) {
+                                    //                         isNavigationVisible = true
+                                    //                     }
+                                    //                 }
+                                    //             }
+                                    //             .clickable { isNavigationVisible = true }
+                                    //     )
+                                    // }
+
+                                    // BARU: Floating Capsule Handle elegan yang ditempatkan DI ATAS inset navigationBars sistem Android.
+                                    // Mengeliminasi total tabrakan dengan gestur Back to Home OS:
+                                    // 1. Memiliki bantalan insets (windowInsetsPadding(WindowInsets.navigationBars)) sehingga posisinya tidak di tepi bezel bawah layar.
+                                    // 2. Mendukung ketukan sekali sentuh (single-tap) yang tidak akan pernah memicu gestur usap home OS.
+                                    // 3. Mendukung usap ke atas pada kapsul itu sendiri untuk mengembalikan navigasi dengan mulus.
+                                    AnimatedVisibility(
+                                        visible = !isNavigationVisible,
+                                        enter = fadeIn(animationSpec = tween(200)),
+                                        exit = fadeOut(animationSpec = tween(150)),
+                                        modifier = Modifier
+                                            .align(Alignment.BottomCenter)
+                                            .windowInsetsPadding(WindowInsets.navigationBars)
+                                            .padding(bottom = 12.dp)
+                                    ) {
                                         Box(
                                             modifier = Modifier
-                                                .align(Alignment.BottomCenter)
-                                                .fillMaxWidth()
-                                                .height(28.dp)
+                                                .clip(RoundedCornerShape(20.dp))
+                                                .background(Color(0xFF0A0D14).copy(alpha = 0.88f))
+                                                .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(20.dp))
+                                                .clickable { isNavigationVisible = true }
                                                 .pointerInput(Unit) {
                                                     detectVerticalDragGestures { _, dragAmount ->
-                                                        if (dragAmount < -10f) {
+                                                        if (dragAmount < -8f) {
                                                             isNavigationVisible = true
                                                         }
                                                     }
                                                 }
-                                                .clickable { isNavigationVisible = true }
-                                        )
+                                                .padding(horizontal = 28.dp, vertical = 9.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .width(36.dp)
+                                                    .height(4.dp)
+                                                    .clip(RoundedCornerShape(2.dp))
+                                                    .background(Color.White.copy(alpha = 0.70f))
+                                            )
+                                        }
                                     }
                                 }
                             }
