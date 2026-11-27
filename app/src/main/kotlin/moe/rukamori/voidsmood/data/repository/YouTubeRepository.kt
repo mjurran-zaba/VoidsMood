@@ -180,10 +180,17 @@ object YouTubeRepository {
                     )
                 }
 
-            // DINONAKTIFKAN: Raw description yang meloloskan tag HTML <br> dan entitas HTML
-            // description = info.description?.content ?: "",
             // BARU: Pembersihan teks deskripsi video secara menyeluruh dari tag HTML <br>, <p>, anchor, dan entitas HTML
-            description = cleanHtmlDescription(info.description?.content ?: ""),
+            val cleanDescription = cleanHtmlDescription(info.description?.content ?: "")
+
+            val details = VideoPlaybackDetails(
+                video = baseVideo,
+                hlsUrl = cleanHls,
+                videoUrl = selectedVideoUrl,
+                audioUrl = selectedAudioUrl,
+                isProgressiveMuxed = (muxedProgressive != null),
+                isLive = !info.hlsUrl.isNullOrBlank(),
+                description = cleanDescription,
                 subscriberCountText = if (info.uploaderSubscriberCount > 0) "${VideoItem.formatCount(info.uploaderSubscriberCount)} subscriber" else "",
                 likeCountText = if (info.likeCount > 0) VideoItem.formatCount(info.likeCount) else "Suka",
                 dislikeCountText = if (info.dislikeCount > 0) VideoItem.formatCount(info.dislikeCount) else "",
