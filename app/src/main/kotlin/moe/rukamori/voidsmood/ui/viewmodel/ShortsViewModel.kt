@@ -147,6 +147,10 @@ class ShortsViewModel : ViewModel() {
         val video = list.getOrNull(index) ?: return
         _currentPage.value = index
 
+        // BARU: Prefetch detail video berikutnya (index + 1 dan index + 2) di background
+        // sehingga saat pengguna swipe ke bawah, pemutaran langsung berputar seketika tanpa buffering
+        prefetchUpcomingShorts(index)
+
         if (currentPlayingVideoId == video.id && exoPlayerInstance?.playbackState == Player.STATE_READY) {
             exoPlayerInstance?.play()
             return
@@ -194,6 +198,25 @@ class ShortsViewModel : ViewModel() {
                         player.play()
                     }
                 }
+            }
+        }
+    }
+
+    // BARU: Pre-fetching video Shorts berikutnya ke LRU Cache di background (0 ms jeda saat swipe)
+    private fun prefetchUpcomingShorts(currentIndex: Int) {
+        val list = _shorts.value
+        list.getOrNull(currentIndex + 1)?.let { nextVid ->
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    YouTubeRepository.getVideoPlaybackDetails(nextVid.id)
+                } catch (_: Exception) {}
+            }
+        }
+        list.getOrNull(currentIndex + 2)?.let { nextNextVid ->
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    YouTubeRepository.getVideoPlaybackDetails(nextNextVid.id)
+                } catch (_: Exception) {}
             }
         }
     }

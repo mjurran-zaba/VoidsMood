@@ -8,8 +8,12 @@ import moe.rukamori.voidsmood.data.model.VideoItem
 import moe.rukamori.voidsmood.data.model.VideoPlaybackDetails
 import moe.rukamori.voidsmood.data.network.NetworkClient
 import moe.rukamori.voidsmood.data.network.NewPipeDownloader
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
 import org.schabi.newpipe.extractor.MediaFormat
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
@@ -334,6 +338,128 @@ object YouTubeRepository {
 
     private var shortsSeedIndex = 0
 
+    // BARU: Ekstraksi Shorts langsung dari InnerTube API yang membaca wadah 'gridShelfViewModel' & 'reelShelfRenderer'.
+    // Ini mengembalikan 25-35 video Shorts vertikal murni per kueri (mengatasi bug NewPipeExtractor 0.27.1
+    // yang membuang rak shorts dan hanya menyisakan 2-3 video).
+    private fun fetchShortsFromInnerTube(query: String): List<VideoItem> {
+        try {
+            val jsonContext = JSONObject().apply {
+                put("client", JSONObject().apply {
+                    put("hl", "en")
+                    put("gl", "US")
+                    put("clientName", "WEB")
+                    put("clientVersion", "2.20240101.00.00")
+                })
+            }
+            val jsonBody = JSONObject().apply {
+                put("context", jsonContext)
+                put("query", query)
+            }
+            val mediaType = "application/json; charset=utf-8".toMediaType()
+            val requestBody = jsonBody.toString().toRequestBody(mediaType)
+            val request = Request.Builder()
+                .url("https://www.youtube.com/youtubei/v1/search?prettyPrint=false")
+                .header("User-Agent", NewPipeDownloader.DEFAULT_USER_AGENT)
+                .post(requestBody)
+                .build()
+
+            val response = NetworkClient.okHttpClient.newCall(request).execute()
+            val raw = response.body?.string() ?: return emptyList()
+            val root = JSONObject(raw)
+            val contents = root.optJSONObject("contents")
+                ?.optJSONObject("twoColumnSearchResultsRenderer")
+                ?.optJSONObject("primaryContents")
+                ?.optJSONObject("sectionListRenderer")
+                ?.optJSONArray("contents") ?: return emptyList()
+
+            val resultList = mutableListOf<VideoItem>()
+
+            for (i in 0 until contents.length()) {
+                val sec = contents.optJSONObject(i) ?: continue
+                val itemSection = sec.optJSONObject("itemSectionRenderer") ?: continue
+                val secContents = itemSection.optJSONArray("contents") ?: continue
+
+                for (j in 0 until secContents.length()) {
+                    val it = secContents.optJSONObject(j) ?: continue
+
+                    // 1. Ekstraksi dari gridShelfViewModel (rak Shorts utama di YouTube Web)
+                    val gridShelf = it.optJSONObject("gridShelfViewModel")
+                    if (gridShelf != null) {
+                        val gridContents = gridShelf.optJSONArray("contents")
+                        if (gridContents != null) {
+                            for (k in 0 until gridContents.length()) {
+                                val itemObj = gridContents.optJSONObject(k) ?: continue
+                                val sl = itemObj.optJSONObject("shortsLockupViewModel") ?: continue
+                                val title = sl.optJSONObject("overlayMetadata")?.optJSONObject("primaryText")?.optString("content", "Untitled Shorts") ?: "Untitled Shorts"
+                                val urlPath = sl.optJSONObject("onTap")?.optJSONObject("innertubeCommand")?.optJSONObject("commandMetadata")?.optJSONObject("webCommandMetadata")?.optString("url", "") ?: ""
+                                val vidId = extractVideoId(urlPath)
+                                val views = sl.optJSONObject("overlayMetadata")?.optJSONObject("secondaryText")?.optString("content", "") ?: ""
+                                val sources = sl.optJSONObject("thumbnailViewModel")?.optJSONObject("thumbnailViewModel")?.optJSONObject("image")?.optJSONArray("sources")
+                                val thumb = sources?.optJSONObject(0)?.optString("url") ?: "https://i.ytimg.com/vi/$vidId/hqdefault.jpg"
+
+                                if (vidId.length == 11) {
+                                    resultList.add(
+                                        VideoItem(
+                                            id = vidId,
+                                            url = "https://www.youtube.com/shorts/$vidId",
+                                            title = title,
+                                            uploaderName = "YouTube Creator",
+                                            uploaderAvatarUrl = null,
+                                            thumbnailUrl = thumb,
+                                            durationSeconds = 30L,
+                                            durationText = "0:30",
+                                            viewCount = 0L,
+                                            viewCountText = views,
+                                            uploadDateText = ""
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // 2. Ekstraksi dari reelShelfRenderer (rak Reel / Shorts format alternatif)
+                    val reelShelf = it.optJSONObject("reelShelfRenderer")
+                    if (reelShelf != null) {
+                        val items = reelShelf.optJSONArray("items")
+                        if (items != null) {
+                            for (k in 0 until items.length()) {
+                                val itemObj = items.optJSONObject(k) ?: continue
+                                val reel = itemObj.optJSONObject("reelItemRenderer") ?: continue
+                                val vidId = reel.optString("videoId")
+                                val title = reel.optJSONObject("headline")?.optString("simpleText", "Untitled Shorts") ?: "Untitled Shorts"
+                                val views = reel.optJSONObject("viewCountText")?.optString("simpleText", "") ?: ""
+                                val thumbs = reel.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+                                val thumb = thumbs?.optJSONObject(0)?.optString("url") ?: "https://i.ytimg.com/vi/$vidId/hqdefault.jpg"
+
+                                if (vidId.length == 11) {
+                                    resultList.add(
+                                        VideoItem(
+                                            id = vidId,
+                                            url = "https://www.youtube.com/shorts/$vidId",
+                                            title = title,
+                                            uploaderName = "YouTube Creator",
+                                            uploaderAvatarUrl = null,
+                                            thumbnailUrl = thumb,
+                                            durationSeconds = 30L,
+                                            durationText = "0:30",
+                                            viewCount = 0L,
+                                            viewCountText = views,
+                                            uploadDateText = ""
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return resultList
+        } catch (_: Exception) {
+            return emptyList()
+        }
+    }
+
     // BARU: Mengambil feed YouTube Shorts organik (25-50 video vertikal) dengan multi-page fetching & regex ID extraction
     suspend fun getShortsFeed(refresh: Boolean = false): Result<List<VideoItem>> = withContext(Dispatchers.IO) {
         try {
@@ -342,48 +468,60 @@ object YouTubeRepository {
                 shortsSeedIndex = (shortsSeedIndex + 1) % SHORTS_SEEDS.size
             }
             val query = SHORTS_SEEDS[shortsSeedIndex]
-            val service = ServiceList.YouTube
-            val searchExtractor = service.getSearchExtractor(query)
-            searchExtractor.fetchPage()
-            val searchInfo = SearchInfo.getInfo(searchExtractor)
+            val innerTubeShorts = fetchShortsFromInnerTube(query).toMutableList()
 
-            val itemsList = mutableListOf<StreamInfoItem>()
-            itemsList.addAll(searchInfo.relatedItems.filterIsInstance<StreamInfoItem>())
-
-            if (searchInfo.hasNextPage() && itemsList.size < 30) {
-                try {
-                    val nextPage = searchExtractor.getPage(searchInfo.nextPage)
-                    itemsList.addAll(nextPage.items.filterIsInstance<StreamInfoItem>())
-                } catch (_: Exception) {}
+            // Jika hasil kueri pertama kurang dari 25, ambil kueri kedua agar daftar terisi 30-50 video
+            if (innerTubeShorts.size < 25) {
+                val nextQuery = SHORTS_SEEDS[(shortsSeedIndex + 1) % SHORTS_SEEDS.size]
+                val extraShorts = fetchShortsFromInnerTube(nextQuery)
+                innerTubeShorts.addAll(extraShorts)
             }
 
-            val shorts = itemsList
-                .filter { item ->
-                    // Filter shorts: durasi <= 90 detik atau 0 (belum teridentifikasi oleh NewPipe)
-                    item.duration <= 90L || item.duration <= 0L
-                }
-                .map { item ->
-                    val videoId = extractVideoId(item.url)
-                    val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
-                    val avatar = item.uploaderAvatars.firstOrNull()?.url
-                    VideoItem(
-                        id = videoId,
-                        url = if (item.url.contains("youtube.com") || item.url.contains("youtu.be")) item.url else "https://www.youtube.com/watch?v=$videoId",
-                        title = item.name ?: "Untitled Shorts",
-                        uploaderName = item.uploaderName ?: "Unknown Creator",
-                        uploaderAvatarUrl = avatar,
-                        thumbnailUrl = thumb,
-                        durationSeconds = item.duration,
-                        durationText = VideoItem.formatDuration(item.duration),
-                        viewCount = item.viewCount,
-                        viewCountText = VideoItem.formatViews(item.viewCount),
-                        uploadDateText = item.textualUploadDate ?: ""
-                    )
-                }
-                .filter { it.id.isNotBlank() && it.id.length == 11 }
-                .distinctBy { it.id }
+            val finalShorts = innerTubeShorts.distinctBy { it.id }
 
-            Result.success(shorts)
+            if (finalShorts.isNotEmpty()) {
+                Result.success(finalShorts)
+            } else {
+                // Fallback ke SearchExtractor bawaan NewPipe jika InnerTube direct request terkendala
+                val service = ServiceList.YouTube
+                val searchExtractor = service.getSearchExtractor(query)
+                searchExtractor.fetchPage()
+                val searchInfo = SearchInfo.getInfo(searchExtractor)
+
+                val itemsList = mutableListOf<StreamInfoItem>()
+                itemsList.addAll(searchInfo.relatedItems.filterIsInstance<StreamInfoItem>())
+
+                if (searchInfo.hasNextPage() && itemsList.size < 30) {
+                    try {
+                        val nextPage = searchExtractor.getPage(searchInfo.nextPage)
+                        itemsList.addAll(nextPage.items.filterIsInstance<StreamInfoItem>())
+                    } catch (_: Exception) {}
+                }
+
+                val fallbackShorts = itemsList
+                    .map { item ->
+                        val videoId = extractVideoId(item.url)
+                        val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+                        val avatar = item.uploaderAvatars.firstOrNull()?.url
+                        VideoItem(
+                            id = videoId,
+                            url = "https://www.youtube.com/shorts/$videoId",
+                            title = item.name ?: "Untitled Shorts",
+                            uploaderName = item.uploaderName ?: "Unknown Creator",
+                            uploaderAvatarUrl = avatar,
+                            thumbnailUrl = thumb,
+                            durationSeconds = item.duration,
+                            durationText = VideoItem.formatDuration(item.duration),
+                            viewCount = item.viewCount,
+                            viewCountText = VideoItem.formatViews(item.viewCount),
+                            uploadDateText = item.textualUploadDate ?: ""
+                        )
+                    }
+                    .filter { it.id.isNotBlank() && it.id.length == 11 }
+                    .distinctBy { it.id }
+
+                Result.success(fallbackShorts)
+            }
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -395,45 +533,38 @@ object YouTubeRepository {
             initIfNeeded()
             val nextIndex = (shortsSeedIndex + pageOffset) % SHORTS_SEEDS.size
             val query = SHORTS_SEEDS[nextIndex]
-            val service = ServiceList.YouTube
-            val searchExtractor = service.getSearchExtractor(query)
-            searchExtractor.fetchPage()
-            val searchInfo = SearchInfo.getInfo(searchExtractor)
-
-            val itemsList = mutableListOf<StreamInfoItem>()
-            itemsList.addAll(searchInfo.relatedItems.filterIsInstance<StreamInfoItem>())
-
-            if (searchInfo.hasNextPage() && itemsList.size < 25) {
-                try {
-                    val nextPage = searchExtractor.getPage(searchInfo.nextPage)
-                    itemsList.addAll(nextPage.items.filterIsInstance<StreamInfoItem>())
-                } catch (_: Exception) {}
+            val moreShorts = fetchShortsFromInnerTube(query)
+            if (moreShorts.isNotEmpty()) {
+                Result.success(moreShorts.distinctBy { it.id })
+            } else {
+                // Fallback ke searchExtractor
+                val service = ServiceList.YouTube
+                val searchExtractor = service.getSearchExtractor(query)
+                searchExtractor.fetchPage()
+                val searchInfo = SearchInfo.getInfo(searchExtractor)
+                val fallbackItems = searchInfo.relatedItems
+                    .filterIsInstance<StreamInfoItem>()
+                    .map { item ->
+                        val videoId = extractVideoId(item.url)
+                        val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+                        VideoItem(
+                            id = videoId,
+                            url = "https://www.youtube.com/shorts/$videoId",
+                            title = item.name ?: "Untitled Shorts",
+                            uploaderName = item.uploaderName ?: "Unknown Creator",
+                            uploaderAvatarUrl = item.uploaderAvatars.firstOrNull()?.url,
+                            thumbnailUrl = thumb,
+                            durationSeconds = item.duration,
+                            durationText = VideoItem.formatDuration(item.duration),
+                            viewCount = item.viewCount,
+                            viewCountText = VideoItem.formatViews(item.viewCount),
+                            uploadDateText = item.textualUploadDate ?: ""
+                        )
+                    }
+                    .filter { it.id.isNotBlank() && it.id.length == 11 }
+                    .distinctBy { it.id }
+                Result.success(fallbackItems)
             }
-
-            val newShorts = itemsList
-                .filter { item -> item.duration <= 90L || item.duration <= 0L }
-                .map { item ->
-                    val videoId = extractVideoId(item.url)
-                    val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
-                    val avatar = item.uploaderAvatars.firstOrNull()?.url
-                    VideoItem(
-                        id = videoId,
-                        url = if (item.url.contains("youtube.com") || item.url.contains("youtu.be")) item.url else "https://www.youtube.com/watch?v=$videoId",
-                        title = item.name ?: "Untitled Shorts",
-                        uploaderName = item.uploaderName ?: "Unknown Creator",
-                        uploaderAvatarUrl = avatar,
-                        thumbnailUrl = thumb,
-                        durationSeconds = item.duration,
-                        durationText = VideoItem.formatDuration(item.duration),
-                        viewCount = item.viewCount,
-                        viewCountText = VideoItem.formatViews(item.viewCount),
-                        uploadDateText = item.textualUploadDate ?: ""
-                    )
-                }
-                .filter { it.id.isNotBlank() && it.id.length == 11 }
-                .distinctBy { it.id }
-
-            Result.success(newShorts)
         } catch (e: Exception) {
             Result.failure(e)
         }

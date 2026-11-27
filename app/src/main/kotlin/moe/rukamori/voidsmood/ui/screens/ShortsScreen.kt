@@ -325,6 +325,7 @@ private fun ShortsPlayerPage(
                     PlayerView(ctx).apply {
                         player = exoPlayer
                         useController = false
+                        resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                         setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
                         layoutParams = ViewGroup.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -544,6 +545,37 @@ private fun ShortsPlayerPage(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+        }
+
+        // BARU: Garis progres pemutaran tipis (PolarCyan) di dasar layar video Shorts
+        var currentPositionMs by remember { mutableStateOf(0L) }
+        var totalDurationMs by remember { mutableStateOf(1L) }
+
+        LaunchedEffect(isActive, isPlaying) {
+            if (isActive) {
+                while (true) {
+                    currentPositionMs = exoPlayer.currentPosition.coerceAtLeast(0L)
+                    totalDurationMs = exoPlayer.duration.coerceAtLeast(1L)
+                    delay(150)
+                }
+            }
+        }
+
+        val progress = (currentPositionMs.toFloat() / totalDurationMs.toFloat()).coerceIn(0f, 1f)
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .padding(bottom = 78.dp)
+                .height(2.dp)
+                .background(Color.White.copy(alpha = 0.20f))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(progress)
+                    .fillMaxHeight()
+                    .background(PolarCyan)
+            )
         }
     }
 }
