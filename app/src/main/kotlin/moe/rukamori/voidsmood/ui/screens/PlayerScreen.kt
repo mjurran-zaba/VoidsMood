@@ -374,9 +374,19 @@ fun PlayerScreen(
     //             )
     //         )
     // }
-    // BARU: OkHttpDataSource dengan HTTP/2 connection pooling terpusat dari NetworkClient, streaming chunk instan tanpa handshake ulang
+    // DINONAKTIFKAN: Penggunaan klien umum dengan retry liar pada media stream
+    // val httpDataSourceFactory = remember {
+    //     OkHttpDataSource.Factory(NetworkClient.okHttpClient)
+    //         .setUserAgent(NewPipeDownloader.DEFAULT_USER_AGENT)
+    //         .setDefaultRequestProperties(
+    //             mapOf(
+    //                 "Referer" to "https://www.youtube.com/"
+    //             )
+    //         )
+    // }
+    // BARU: OkHttpDataSource dengan mediaStreamingOkHttpClient (mengadopsi VoidTune PlaybackNetwork: retryOnConnectionFailure = false & 45s keep-alive)
     val httpDataSourceFactory = remember {
-        OkHttpDataSource.Factory(NetworkClient.okHttpClient)
+        OkHttpDataSource.Factory(NetworkClient.mediaStreamingOkHttpClient)
             .setUserAgent(NewPipeDownloader.DEFAULT_USER_AGENT)
             .setDefaultRequestProperties(
                 mapOf(

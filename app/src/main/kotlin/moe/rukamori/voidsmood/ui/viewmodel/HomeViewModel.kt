@@ -39,7 +39,11 @@ class HomeViewModel : ViewModel() {
         loadTrending()
     }
 
-    fun loadTrending() {
+    fun loadTrending(forceReload: Boolean = false) {
+        if (!forceReload && currentVideos.isNotEmpty()) {
+            _uiState.value = HomeUiState.Success(videos = currentVideos.toList(), isSearching = false)
+            return
+        }
         _uiState.value = HomeUiState.Loading
         pageOffset = 0
         viewModelScope.launch(Dispatchers.IO) {
@@ -62,7 +66,7 @@ class HomeViewModel : ViewModel() {
             pageOffset = 0
             val result = YouTubeRepository.getTrendingVideos(refresh = true)
             result.onSuccess { items ->
-                currentVideos = items.toMutableList()
+                currentVideos = items.distinctBy { it.id }.toMutableList()
                 _uiState.value = HomeUiState.Success(videos = currentVideos.toList(), isSearching = false)
             }
             _isRefreshing.value = false
@@ -81,7 +85,10 @@ class HomeViewModel : ViewModel() {
             val result = YouTubeRepository.loadMoreVideos(pageOffset)
             result.onSuccess { newItems ->
                 if (newItems.isNotEmpty()) {
-                    currentVideos.addAll(newItems)
+                    // DINONAKTIFKAN: currentVideos.addAll(newItems) tanpa deduplikasi ID
+                    // BARU: Gabungkan dan filter unik distinctBy { it.id } agar tidak ada benturan key di Jetpack Compose
+                    val combined = (currentVideos + newItems).distinctBy { it.id }
+                    currentVideos = combined.toMutableList()
                     _uiState.value = currentState.copy(videos = currentVideos.toList())
                 }
             }

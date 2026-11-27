@@ -106,18 +106,33 @@ private fun SuccessFeedView(
     val listState = rememberLazyListState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
 
-    // Deteksi saat pengguna mendekati akhir daftar (sisa 4 video) untuk memuat batch berikutnya
-    val shouldLoadMore by remember {
-        derivedStateOf {
-            val totalItems = listState.layoutInfo.totalItemsCount
-            val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            totalItems > 0 && lastVisibleItem >= totalItems - 4
-        }
-    }
-
-    LaunchedEffect(shouldLoadMore) {
-        if (shouldLoadMore && !isLoadingMore) {
-            viewModel.loadMore()
+    // DINONAKTIFKAN: LaunchedEffect(shouldLoadMore) yang terkunci (deadlock) jika sempat gagal atau pengguna tetap di dasar list
+    // val shouldLoadMore by remember {
+    //     derivedStateOf {
+    //         val totalItems = listState.layoutInfo.totalItemsCount
+    //         val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+    //         totalItems > 0 && lastVisibleItem >= totalItems - 4
+    //     }
+    // }
+    // LaunchedEffect(shouldLoadMore) {
+    //     if (shouldLoadMore && !isLoadingMore) {
+    //         viewModel.loadMore()
+    //     }
+    // }
+    // BARU: snapshotFlow dinamis yang memantau interaksi scroll di dekat ujung daftar.
+    // Tidak akan macet jika terjadi transient delay; setiap kali pengguna menggulir mendekati akhir,
+    // sistem akan otomatis mencoba memuat video berikutnya tanpa harus scroll balik ke atas untuk refresh.
+    LaunchedEffect(listState) {
+        androidx.compose.runtime.snapshotFlow {
+            val layoutInfo = listState.layoutInfo
+            val total = layoutInfo.totalItemsCount
+            val lastIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val isNearEnd = total > 0 && lastIndex >= (total - 5)
+            isNearEnd to listState.firstVisibleItemScrollOffset
+        }.collect { (isNearEnd, _) ->
+            if (isNearEnd && !viewModel.isLoadingMore.value) {
+                viewModel.loadMore()
+            }
         }
     }
 

@@ -168,7 +168,10 @@ class ShortsViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             val detailsResult = YouTubeRepository.getVideoPlaybackDetails(video.id)
             detailsResult.onSuccess { details ->
-                val httpDataSourceFactory = OkHttpDataSource.Factory(NetworkClient.okHttpClient)
+                // DINONAKTIFKAN: Penggunaan klien umum untuk streaming media
+                // val httpDataSourceFactory = OkHttpDataSource.Factory(NetworkClient.okHttpClient)
+                // BARU: Gunakan mediaStreamingOkHttpClient dengan retryOnConnectionFailure = false & 45s keep-alive
+                val httpDataSourceFactory = OkHttpDataSource.Factory(NetworkClient.mediaStreamingOkHttpClient)
                     .setUserAgent(NewPipeDownloader.DEFAULT_USER_AGENT)
                     .setDefaultRequestProperties(mapOf("Referer" to "https://www.youtube.com/"))
 

@@ -269,9 +269,16 @@ class MainActivity : ComponentActivity() {
                                     AppleBottomNavigationBar(
                                         currentTab = currentTab,
                                         onTabSelected = { tab ->
+                                            val wasAlreadyHome = (currentTab == NavigationTab.HOME)
                                             currentTab = tab
                                             if (tab == NavigationTab.HOME) {
-                                                homeViewModel.loadTrending()
+                                                // DINONAKTIFKAN: homeViewModel.loadTrending() setiap kali tab HOME dipilih yang mereset scroll dan feed ke kosong
+                                                // BARU: Pertahankan feed video yang ada saat beralih tab, hanya refresh jika user men-tap tab HOME kedua kalinya
+                                                if (wasAlreadyHome) {
+                                                    homeViewModel.refreshTrending()
+                                                } else {
+                                                    homeViewModel.loadTrending(forceReload = false)
+                                                }
                                             }
                                         },
                                         modifier = Modifier

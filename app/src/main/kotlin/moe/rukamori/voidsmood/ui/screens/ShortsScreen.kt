@@ -35,7 +35,9 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -91,8 +93,9 @@ import moe.rukamori.voidsmood.ui.theme.PureBlack
 import moe.rukamori.voidsmood.ui.theme.TextMuted
 
 // BARU: Layar Khusus Video Vertikal YouTube Shorts / Reels (Opsi Pilihan User)
-// Menampilkan pengalaman swipe vertikal layar penuh 9:16 dengan Single Shared ExoPlayer & Non-blocking Clickable Gesture
-@OptIn(UnstableApi::class)
+// Menampilkan pengalaman swipe vertikal layar penuh 9:16 dengan Single Shared ExoPlayer, Non-blocking Clickable Gesture,
+// dan PullToRefreshBox murni spinner ikon (tanpa teks label)
+@OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ShortsScreen(
     onVideoSelect: (VideoItem) -> Unit,
@@ -130,7 +133,16 @@ fun ShortsScreen(
         }
     }
 
-    Box(
+    // DINONAKTIFKAN: Kontainer Box biasa tanpa gestur Pull-to-Refresh
+    // Box(
+    //     modifier = modifier
+    //         .fillMaxSize()
+    //         .background(PureBlack)
+    // ) {
+    // BARU: PullToRefreshBox native Jetpack Compose Material 3 murni indikator spinner circular (tanpa teks label)
+    PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = { viewModel.loadShorts(refresh = true) },
         modifier = modifier
             .fillMaxSize()
             .background(PureBlack)

@@ -169,9 +169,45 @@ object YouTubeRepository {
                 }
                 .filter { it.id.isNotBlank() && it.id.length == 11 }
                 .distinctBy { it.id }
+                .toMutableList()
 
-            if (videoItems.isNotEmpty()) {
-                Result.success(videoItems)
+            // BARU: Jika hasil awal kurang dari 30 video, ambil juga dari seed berikutnya
+            // agar beranda saat pertama kali dibuka langsung memiliki 35-50 video tanpa cepat mentok di batas bawah
+            if (videoItems.size < 30) {
+                try {
+                    val nextSeed = FEED_SEEDS[(currentSeedIndex + 1) % FEED_SEEDS.size]
+                    val nextExtractor = service.getSearchExtractor(nextSeed)
+                    nextExtractor.fetchPage()
+                    val nextInfo = SearchInfo.getInfo(nextExtractor)
+                    val extraItems = nextInfo.relatedItems
+                        .filterIsInstance<StreamInfoItem>()
+                        .map { item ->
+                            val videoId = extractVideoId(item.url)
+                            val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+                            val avatar = item.uploaderAvatars.firstOrNull()?.url
+                            VideoItem(
+                                id = videoId,
+                                url = item.url,
+                                title = item.name ?: "Untitled",
+                                uploaderName = item.uploaderName ?: "Unknown Creator",
+                                uploaderAvatarUrl = avatar,
+                                thumbnailUrl = thumb,
+                                durationSeconds = item.duration,
+                                durationText = VideoItem.formatDuration(item.duration),
+                                viewCount = item.viewCount,
+                                viewCountText = VideoItem.formatViews(item.viewCount),
+                                uploadDateText = item.textualUploadDate ?: ""
+                            )
+                        }
+                        .filter { it.id.isNotBlank() && it.id.length == 11 }
+                    videoItems.addAll(extraItems)
+                } catch (_: Exception) {}
+            }
+
+            val finalVideos = videoItems.distinctBy { it.id }
+
+            if (finalVideos.isNotEmpty()) {
+                Result.success(finalVideos)
             } else {
                 // Fallback ke Kiosk Trending bawaan
                 val kioskList = service.kioskList
