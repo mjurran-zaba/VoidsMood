@@ -27,3 +27,7 @@ val TextMuted = Color(0xFF94A3B8)
 val GlassSurface35 = Color(0xFF0E1622).copy(alpha = 0.35f)
 val GlassBorderSubtle = Color(0xFFFFFFFF).copy(alpha = 0.09f)
 val GlassBorderHighlight = Color(0xFF38BDF8).copy(alpha = 0.22f)
+
+// BARU: Alias token untuk kompatibilitas VideoCard dan komponen kartu Glassmorphism
+val GlassSurface = GlassSurface35
+val GlassBorder = GlassBorderSubtle
