@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -37,15 +38,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil3.compose.AsyncImage
 import moe.rukamori.voidsmood.data.model.VideoItem
 import moe.rukamori.voidsmood.ui.components.GlassmorphicCard
+import moe.rukamori.voidsmood.ui.components.LucideShorts
 import moe.rukamori.voidsmood.ui.components.VideoCard
 import moe.rukamori.voidsmood.ui.theme.GlassBorder
+import moe.rukamori.voidsmood.ui.theme.GlassBorderSubtle
 import moe.rukamori.voidsmood.ui.theme.GlassSurface
 import moe.rukamori.voidsmood.ui.theme.IceWhite
 import moe.rukamori.voidsmood.ui.theme.PolarCyan
@@ -107,9 +114,15 @@ private fun SuccessFeedView(
 ) {
     val listState = rememberLazyListState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
+    val selectedTopic by viewModel.selectedTopic.collectAsState()
+    val homeShorts by viewModel.homeShorts.collectAsState()
 
     var selectedFilter by remember { mutableStateOf("Semua") }
     val filterOptions = listOf("Semua", "Video", "Shorts")
+
+    val categoryTopics = remember {
+        listOf("Semua", "Musik", "Gaming", "Podcast", "Sains & Teknologi", "Berita", "Animasi", "Otomotif")
+    }
 
     val displayedVideos = remember(videos, isSearching, selectedFilter) {
         if (!isSearching) videos
@@ -158,6 +171,37 @@ private fun SuccessFeedView(
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // BARU: Bilah Kapsul Topik Kategori di Beranda (Hanya tampil saat mode beranda normal / tidak searching)
+        if (!isSearching) {
+            item {
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(categoryTopics) { topic ->
+                        val isSelected = selectedTopic == topic
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(if (isSelected) PolarCyan else Color(0xFF1B1E29))
+                                .border(1.dp, if (isSelected) PolarCyan else GlassBorder, RoundedCornerShape(14.dp))
+                                .clickable { viewModel.selectTopic(topic) }
+                                .padding(horizontal = 14.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = topic,
+                                color = if (isSelected) PureBlack else IceWhite,
+                                fontSize = 12.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // Hanya tampilkan baris pencarian jika sedang dalam mode search
         if (isSearching) {
             item {
@@ -237,6 +281,71 @@ private fun SuccessFeedView(
                         fontSize = 14.sp
                     )
                 }
+            }
+        } else if (!isSearching && homeShorts.isNotEmpty() && displayedVideos.size >= 4) {
+            val firstBatch = displayedVideos.take(4)
+            val remainingBatch = displayedVideos.drop(4)
+
+            items(
+                items = firstBatch,
+                key = { it.id }
+            ) { video ->
+                VideoCard(
+                    video = video,
+                    onVideoClick = onVideoClick
+                )
+            }
+
+            // BARU: Rak Shorts Interleaved di tengah Home feed (Jembatan Retensi Doomscrolling YouTube)
+            item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        LucideShorts(
+                            tint = Color(0xFFFF0033),
+                            size = 20.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Shorts",
+                            color = IceWhite,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(
+                            items = homeShorts,
+                            key = { "shelf_${it.id}" }
+                        ) { shortItem ->
+                            ShortsShelfCard(
+                                short = shortItem,
+                                onClick = { onVideoClick(shortItem) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            items(
+                items = remainingBatch,
+                key = { it.id }
+            ) { video ->
+                VideoCard(
+                    video = video,
+                    onVideoClick = onVideoClick
+                )
             }
         } else {
             items(
@@ -390,6 +499,70 @@ private fun ErrorFeedView(
                         fontWeight = FontWeight.Bold
                     )
                 }
+            }
+        }
+    }
+}
+
+// BARU: Kartu Shorts Vertikal 9:16 untuk Rak Shorts di Beranda (Doomscrolling Interleaving)
+@Composable
+private fun ShortsShelfCard(
+    short: VideoItem,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .width(140.dp)
+            .height(235.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color(0xFF141721))
+            .border(1.dp, GlassBorderSubtle, RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+    ) {
+        AsyncImage(
+            model = short.thumbnailUrl,
+            contentDescription = short.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // Vignette gradasi hitam di bawah untuk keterbacaan teks judul
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.88f)
+                        )
+                    )
+                )
+        )
+
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(10.dp)
+        ) {
+            Text(
+                text = short.title,
+                color = IceWhite,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                lineHeight = 16.sp
+            )
+            if (short.viewCount > 0) {
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    text = "${VideoItem.formatCount(short.viewCount)} tayangan",
+                    color = IceWhite.copy(alpha = 0.70f),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Normal
+                )
             }
         }
     }

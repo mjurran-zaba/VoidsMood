@@ -49,6 +49,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -378,46 +379,44 @@ fun SearchScreen(
                 }
             }
         } else {
-            // FASE 2B: Tampilan jika Riwayat Penelusuran masih kosong: Deretan Topik Populer
-            Column(
+            // DINONAKTIFKAN: Tampilan deretan chip topik populer saat riwayat kosong
+            // Column(
+            //     modifier = Modifier
+            //         .fillMaxSize()
+            //         .padding(16.dp)
+            // ) {
+            //     Text("Topik Populer", ...)
+            //     FlowRow(...) { ... }
+            // }
+            // BARU: Tipografi bersih minimalis di tengah layar 'FIND YOUR MOOD' tanpa tab/kartu/emoji.
+            // Muncul saat riwayat kosong dan query kosong. Otomatis hilang saat mengetik atau memiliki riwayat.
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp)
+                    .padding(horizontal = 32.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "Topik Populer",
-                    color = TextMuted,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
-
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
                 ) {
-                    trendingTopics.forEach { topic ->
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(Color(0xFF1A1D27))
-                                .border(1.dp, GlassBorder, RoundedCornerShape(16.dp))
-                                .clickable {
-                                    LocalLibraryRepository.saveSearchQuery(topic)
-                                    keyboardController?.hide()
-                                    onSearch(topic)
-                                }
-                                .padding(horizontal = 14.dp, vertical = 8.dp)
-                        ) {
-                            Text(
-                                text = topic,
-                                color = IceWhite,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    }
+                    Text(
+                        text = "FIND YOUR MOOD",
+                        color = IceWhite,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 4.sp,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "Telusuri kreator, musik, atau topik yang Anda inginkan",
+                        color = TextMuted,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Normal,
+                        letterSpacing = 0.4.sp,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
         }

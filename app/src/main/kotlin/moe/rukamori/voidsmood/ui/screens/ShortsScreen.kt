@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -51,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -328,6 +330,8 @@ private fun ShortsPlayerPage(
     onVideoSelect: (VideoItem) -> Unit
 ) {
     var showPlayPauseIndicator by remember { mutableStateOf(false) }
+    var showDoubleTapLike by remember { mutableStateOf(false) }
+    var isTitleExpanded by remember { mutableStateOf(false) }
     var isLiked by remember(video.id) { mutableStateOf(LocalLibraryRepository.isLiked(video.id)) }
 
     // BARU: Lacak apakah frame pertama video Short sudah berhasil dirender
@@ -362,15 +366,21 @@ private fun ShortsPlayerPage(
         modifier = Modifier
             .fillMaxSize()
             .background(PureBlack)
-            // BARU: Gunakan clickable dengan indication null agar sentuhan tap dapat direspon TANPA menelan event drag vertikal VerticalPager
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = {
-                    onTogglePlayPause()
-                    showPlayPauseIndicator = true
-                }
-            )
+            // BARU: Gunakan pointerInput detectTapGestures untuk single-tap (play/pause) dan double-tap (like animasi)
+            .pointerInput(video.id) {
+                detectTapGestures(
+                    onTap = {
+                        onTogglePlayPause()
+                        showPlayPauseIndicator = true
+                    },
+                    onDoubleTap = {
+                        if (!isLiked) {
+                            isLiked = LocalLibraryRepository.toggleLike(video)
+                        }
+                        showDoubleTapLike = true
+                    }
+                )
+            }
     ) {
         // Lapisan Video: Hanya pasang PlayerView pada halaman yang sedang aktif di layar
         if (isActive) {
@@ -472,6 +482,33 @@ private fun ShortsPlayerPage(
                 } else {
                     LucidePlay(tint = Color.White, size = 32.dp)
                 }
+            }
+        }
+
+        // BARU: Indikator Animasi Double-Tap to Like di tengah layar
+        LaunchedEffect(showDoubleTapLike) {
+            if (showDoubleTapLike) {
+                delay(700)
+                showDoubleTapLike = false
+            }
+        }
+        AnimatedVisibility(
+            visible = showDoubleTapLike,
+            enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)),
+            exit = fadeOut(animationSpec = spring(stiffness = Spring.StiffnessHigh)),
+            modifier = Modifier.align(Alignment.Center)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(92.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.55f)),
+                contentAlignment = Alignment.Center
+            ) {
+                LucideThumbsUp(
+                    tint = PolarCyan,
+                    size = 48.dp
+                )
             }
         }
 
@@ -600,15 +637,16 @@ private fun ShortsPlayerPage(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Judul Shorts
+            // BARU: Judul Shorts (Dapat diketuk untuk memperluas / ekspansi deskripsi & tagar)
             Text(
                 text = video.title,
                 color = IceWhite,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Normal,
-                maxLines = 2,
+                maxLines = if (isTitleExpanded) 8 else 2,
                 overflow = TextOverflow.Ellipsis,
-                lineHeight = 18.sp
+                lineHeight = 18.sp,
+                modifier = Modifier.clickable { isTitleExpanded = !isTitleExpanded }
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -628,7 +666,8 @@ private fun ShortsPlayerPage(
             }
         }
 
-        // BARU: Garis progres pemutaran tipis (PolarCyan) di dasar layar video Shorts dengan proteksi NaN/zero-division
+        // BARU: Garis progres pemutaran tipis interaktif (PolarCyan) di dasar layar video Shorts
+        // Responsif terhadap sentuhan geser / tap seeking
         var currentPositionMs by remember { mutableStateOf(0L) }
         var totalDurationMs by remember { mutableStateOf(1L) }
 
@@ -651,16 +690,31 @@ private fun ShortsPlayerPage(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .fillMaxWidth()
-                .padding(bottom = 78.dp)
-                .height(2.dp)
-                .background(Color.White.copy(alpha = 0.20f))
+                .padding(bottom = 74.dp)
+                .height(14.dp)
+                .pointerInput(totalDurationMs) {
+                    detectTapGestures { offset ->
+                        val fraction = (offset.x / size.width).coerceIn(0f, 1f)
+                        val seekPos = (fraction * totalDurationMs).toLong()
+                        exoPlayer.seekTo(seekPos)
+                        currentPositionMs = seekPos
+                    }
+                },
+            contentAlignment = Alignment.CenterStart
         ) {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth(progress)
-                    .fillMaxHeight()
-                    .background(PolarCyan)
-            )
+                    .fillMaxWidth()
+                    .height(2.5.dp)
+                    .background(Color.White.copy(alpha = 0.20f))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(progress)
+                        .fillMaxHeight()
+                        .background(PolarCyan)
+                )
+            }
         }
     }
 }
