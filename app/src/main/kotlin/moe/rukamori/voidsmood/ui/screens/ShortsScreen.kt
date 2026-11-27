@@ -75,6 +75,10 @@ import moe.rukamori.voidsmood.data.network.NetworkClient
 import moe.rukamori.voidsmood.data.network.NewPipeDownloader
 import moe.rukamori.voidsmood.data.repository.LocalLibraryRepository
 import moe.rukamori.voidsmood.data.repository.YouTubeRepository
+import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.viewmodel.compose.viewModel
+import moe.rukamori.voidsmood.ui.viewmodel.ShortsUiState
+import moe.rukamori.voidsmood.ui.viewmodel.ShortsViewModel
 import moe.rukamori.voidsmood.ui.components.LucidePause
 import moe.rukamori.voidsmood.ui.components.LucidePlay
 import moe.rukamori.voidsmood.ui.components.LucideShare2
@@ -91,78 +95,38 @@ import moe.rukamori.voidsmood.ui.theme.TextMuted
 @Composable
 fun ShortsScreen(
     onVideoSelect: (VideoItem) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    viewModel: ShortsViewModel = viewModel()
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
 
-    var shortsList by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
-    var isLoadingMore by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    // DINONAKTIFKAN: State lokal remember dan DisposableEffect yang merelease ExoPlayer saat berpindah tab ke Home,
+    // yang menyebabkan layar menjadi blank hitam saat pengguna kembali dari tab Home ke Shorts
+    // var shortsList by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
+    // var isLoading by remember { mutableStateOf(true) }
+    // var isLoadingMore by remember { mutableStateOf(false) }
+    // var errorMessage by remember { mutableStateOf<String?>(null) }
+    // val sharedExoPlayer = remember { ExoPlayer.Builder(context)... }
+    // DisposableEffect(sharedExoPlayer) { onDispose { sharedExoPlayer.release() } }
 
-    // BARU: Fast-Start LoadControl khusus Shorts (hanya butuh buffer 600ms untuk langsung play tanpa buffering lama)
-    val shortsLoadControl = remember {
-        DefaultLoadControl.Builder()
-            .setBufferDurationsMs(
-                /* minBufferMs = */ 8_000,
-                /* maxBufferMs = */ 20_000,
-                /* bufferForPlaybackMs = */ 600,
-                /* bufferForPlaybackAfterRebufferMs = */ 1_000
-            )
-            .setPrioritizeTimeOverSizeThresholds(true)
-            .build()
+    // BARU: State terpusat dari ShortsViewModel (State Hoisting) yang tersimpan utuh di RAM saat berpindah tab
+    val shortsList by viewModel.shorts.collectAsState()
+    val uiState by viewModel.uiState.collectAsState()
+    val isPlaying by viewModel.isPlaying.collectAsState()
+    val isBuffering by viewModel.isBuffering.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
+    val isLoadingMore by viewModel.isLoadingMore.collectAsState()
+
+    val sharedExoPlayer = remember(context) {
+        viewModel.getOrCreateShortsPlayer(context)
     }
 
-    // BARU: Single Shared ExoPlayer instance di level ShortsScreen agar tidak terjadi decoder exhaustion dan saturasi bandwidth jaringan
-    val sharedExoPlayer = remember {
-        ExoPlayer.Builder(context)
-            .setLoadControl(shortsLoadControl)
-            .build().apply {
-                repeatMode = Player.REPEAT_MODE_ONE
-            }
-    }
-
-    // DINONAKTIFKAN: DefaultHttpDataSource lama berbasis Java HttpURLConnection tanpa HTTP/2 multiplexing
-    // val httpDataSourceFactory = remember {
-    //     DefaultHttpDataSource.Factory()
-    //         .setUserAgent(NewPipeDownloader.DEFAULT_USER_AGENT)
-    //         .setAllowCrossProtocolRedirects(true)
-    //         .setConnectTimeoutMs(15000)
-    //         .setReadTimeoutMs(20000)
-    //         .setDefaultRequestProperties(mapOf("Referer" to "https://www.youtube.com/"))
-    // }
-    // BARU: OkHttpDataSource dengan persistent connection pooling HTTP/2 dari NetworkClient
-    val httpDataSourceFactory = remember {
-        OkHttpDataSource.Factory(NetworkClient.okHttpClient)
-            .setUserAgent(NewPipeDownloader.DEFAULT_USER_AGENT)
-            .setDefaultRequestProperties(mapOf("Referer" to "https://www.youtube.com/"))
-    }
-
-    DisposableEffect(sharedExoPlayer) {
+    // BARU: Jeda pemutaran video saat pengguna beralih keluar dari tab Shorts, dan lanjutkan saat masuk kembali
+    DisposableEffect(Unit) {
+        viewModel.resumePlayer()
         onDispose {
-            sharedExoPlayer.stop()
-            sharedExoPlayer.release()
+            viewModel.pausePlayer()
         }
-    }
-
-    fun loadShorts(refresh: Boolean = false) {
-        isLoading = true
-        errorMessage = null
-        scope.launch {
-            val result = YouTubeRepository.getShortsFeed(refresh = refresh)
-            result.onSuccess { list ->
-                shortsList = list
-                isLoading = false
-            }.onFailure { err ->
-                errorMessage = err.localizedMessage ?: "Gagal memuat YouTube Shorts."
-                isLoading = false
-            }
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        loadShorts(refresh = false)
     }
 
     Box(
@@ -170,184 +134,153 @@ fun ShortsScreen(
             .fillMaxSize()
             .background(PureBlack)
     ) {
-        if (isLoading && shortsList.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(
-                        color = PolarCyan,
-                        strokeWidth = 3.dp,
-                        modifier = Modifier.size(42.dp)
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "Memuat YouTube Shorts...",
-                        color = TextMuted,
-                        fontSize = 13.sp
-                    )
-                }
-            }
-        } else if (errorMessage != null && shortsList.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(24.dp)
+        when {
+            uiState is ShortsUiState.Loading && shortsList.isEmpty() -> {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = errorMessage ?: "Koneksi terkendala.",
-                        color = IceWhite,
-                        fontSize = 14.sp
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(PolarCyan)
-                            .clickable { loadShorts(refresh = true) }
-                            .padding(horizontal = 20.dp, vertical = 10.dp)
-                    ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(
+                            color = PolarCyan,
+                            strokeWidth = 3.dp,
+                            modifier = Modifier.size(42.dp)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = "Coba Lagi",
-                            color = PureBlack,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
+                            text = "Memuat YouTube Shorts...",
+                            color = TextMuted,
+                            fontSize = 13.sp
                         )
                     }
                 }
             }
-        } else if (shortsList.isNotEmpty()) {
-            val pagerState = rememberPagerState(pageCount = { shortsList.size })
-
-            // BARU: Infinite Scroll - Muat lebih banyak shorts saat pengguna mendekati 4 item terakhir di pager
-            LaunchedEffect(pagerState.currentPage, shortsList.size) {
-                if (shortsList.isNotEmpty() && pagerState.currentPage >= shortsList.size - 4 && !isLoadingMore) {
-                    isLoadingMore = true
-                    val moreResult = YouTubeRepository.getShortsFeed(refresh = true)
-                    moreResult.onSuccess { newShorts ->
-                        if (newShorts.isNotEmpty()) {
-                            shortsList = (shortsList + newShorts).distinctBy { it.id }
+            uiState is ShortsUiState.Error && shortsList.isEmpty() -> {
+                val errorMsg = (uiState as ShortsUiState.Error).message
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(24.dp)
+                    ) {
+                        Text(
+                            text = errorMsg,
+                            color = IceWhite,
+                            fontSize = 14.sp
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(PolarCyan)
+                                .clickable { viewModel.loadShorts(refresh = true) }
+                                .padding(horizontal = 20.dp, vertical = 10.dp)
+                        ) {
+                            Text(
+                                text = "Coba Lagi",
+                                color = PureBlack,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
-                    }
-                    isLoadingMore = false
-                }
-            }
-
-            // BARU: Kontrol pemutaran pada video yang sedang aktif di pager
-            var isCurrentPlaying by remember { mutableStateOf(true) }
-            var isCurrentBuffering by remember { mutableStateOf(true) }
-
-            LaunchedEffect(pagerState.currentPage, shortsList) {
-                val currentVideo = shortsList.getOrNull(pagerState.currentPage) ?: return@LaunchedEffect
-                LocalLibraryRepository.addToHistory(currentVideo)
-                isCurrentBuffering = true
-                sharedExoPlayer.pause()
-                sharedExoPlayer.stop()
-                sharedExoPlayer.clearMediaItems()
-
-                val result = YouTubeRepository.getVideoPlaybackDetails(currentVideo.id)
-                result.onSuccess { details ->
-                    val mediaSource: MediaSource? = when {
-                        details.isProgressiveMuxed && !details.videoUrl.isNullOrBlank() -> {
-                            ProgressiveMediaSource.Factory(httpDataSourceFactory)
-                                .createMediaSource(MediaItem.fromUri(details.videoUrl))
-                        }
-                        !details.videoUrl.isNullOrBlank() && !details.audioUrl.isNullOrBlank() -> {
-                            val vSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
-                                .createMediaSource(MediaItem.fromUri(details.videoUrl))
-                            val aSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
-                                .createMediaSource(MediaItem.fromUri(details.audioUrl))
-                            MergingMediaSource(vSource, aSource)
-                        }
-                        !details.videoUrl.isNullOrBlank() -> {
-                            ProgressiveMediaSource.Factory(httpDataSourceFactory)
-                                .createMediaSource(MediaItem.fromUri(details.videoUrl))
-                        }
-                        !details.hlsUrl.isNullOrBlank() -> {
-                            HlsMediaSource.Factory(httpDataSourceFactory)
-                                .createMediaSource(MediaItem.fromUri(details.hlsUrl))
-                        }
-                        else -> null
-                    }
-                    if (mediaSource != null) {
-                        sharedExoPlayer.setMediaSource(mediaSource)
-                        sharedExoPlayer.prepare()
-                        sharedExoPlayer.play()
-                        isCurrentPlaying = true
                     }
                 }
             }
-
-            DisposableEffect(sharedExoPlayer) {
-                val listener = object : Player.Listener {
-                    override fun onPlaybackStateChanged(playbackState: Int) {
-                        when (playbackState) {
-                            Player.STATE_BUFFERING -> isCurrentBuffering = true
-                            Player.STATE_READY -> isCurrentBuffering = false
-                            Player.STATE_ENDED -> isCurrentBuffering = false
-                            else -> {}
-                        }
-                    }
-                    override fun onIsPlayingChanged(playing: Boolean) {
-                        isCurrentPlaying = playing
-                    }
-                }
-                sharedExoPlayer.addListener(listener)
-                onDispose {
-                    sharedExoPlayer.removeListener(listener)
-                }
-            }
-
-            VerticalPager(
-                state = pagerState,
-                modifier = Modifier.fillMaxSize()
-            ) { page ->
-                val shortItem = shortsList[page]
-                val isCurrentPage = pagerState.currentPage == page
-
-                ShortsPlayerPage(
-                    video = shortItem,
-                    isActive = isCurrentPage,
-                    exoPlayer = sharedExoPlayer,
-                    isPlaying = isCurrentPlaying,
-                    isBuffering = isCurrentBuffering,
-                    onTogglePlayPause = {
-                        if (isCurrentPlaying) {
-                            sharedExoPlayer.pause()
-                        } else {
-                            sharedExoPlayer.play()
-                        }
-                    },
-                    onVideoSelect = onVideoSelect
+            shortsList.isNotEmpty() -> {
+                val pagerState = rememberPagerState(
+                    initialPage = viewModel.currentPage.value.coerceIn(0, (shortsList.size - 1).coerceAtLeast(0)),
+                    pageCount = { shortsList.size }
                 )
+
+                // BARU: Pindah video di ExoPlayer saat halaman pager digeser ke video berikutnya / sebelumnya
+                LaunchedEffect(pagerState.currentPage) {
+                    if (shortsList.isNotEmpty()) {
+                        viewModel.playShortAt(pagerState.currentPage)
+                    }
+                }
+
+                // BARU: Infinite Scroll - Muat lebih banyak shorts saat pengguna mendekati 4 item terakhir di pager
+                LaunchedEffect(pagerState.currentPage, shortsList.size) {
+                    if (shortsList.isNotEmpty() && pagerState.currentPage >= shortsList.size - 4 && !isLoadingMore) {
+                        viewModel.loadMore()
+                    }
+                }
+
+                VerticalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize()
+                ) { page ->
+                    val shortItem = shortsList[page]
+                    val isCurrentPage = pagerState.currentPage == page
+
+                    ShortsPlayerPage(
+                        video = shortItem,
+                        isActive = isCurrentPage,
+                        exoPlayer = sharedExoPlayer,
+                        isPlaying = isPlaying,
+                        isBuffering = isBuffering,
+                        onTogglePlayPause = {
+                            viewModel.togglePlayPause()
+                        },
+                        onVideoSelect = onVideoSelect
+                    )
+                }
+
+                // Top Header Bar Transparan
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .windowInsetsTopHeight(WindowInsets.statusBars)
+                        .align(Alignment.TopCenter)
+                ) {}
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 44.dp, start = 18.dp, end = 18.dp)
+                        .align(Alignment.TopStart),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Shorts",
+                        color = IceWhite,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = (-0.5).sp
+                    )
+                }
             }
-
-            // Top Header Bar Transparan
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .windowInsetsTopHeight(WindowInsets.statusBars)
-                    .align(Alignment.TopCenter)
-            ) {}
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 44.dp, start = 18.dp, end = 18.dp)
-                    .align(Alignment.TopStart),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Shorts",
-                    color = IceWhite,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = (-0.5).sp
-                )
+            else -> {
+                // BARU: State cadangan jika list kosong saat selesai loading (mencegah layar blank hitam tak terjangkau)
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "Belum ada video Shorts yang dimuat.",
+                            color = TextMuted,
+                            fontSize = 14.sp
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(PolarCyan)
+                                .clickable { viewModel.loadShorts(refresh = true) }
+                                .padding(horizontal = 20.dp, vertical = 10.dp)
+                        ) {
+                            Text(
+                                text = "Muat Shorts",
+                                color = PureBlack,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
             }
         }
     }

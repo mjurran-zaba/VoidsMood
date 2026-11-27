@@ -28,16 +28,72 @@ object YouTubeRepository {
     @Volatile
     private var isInitialized = false
 
-    // BARU: Kumpulan seed topik dinamis agar feed YouTube kaya, beragam (50+ video),
-    // dan selalu berganti konten baru setiap kali ditarik untuk refresh (Pull-to-Refresh)
+    // BARU: Regex ekstraksi YouTube ID komprehensif (standar PipePipe DeArrowVideoId)
+    // Mendukung tautan /shorts/, v=, /embed/, youtu.be, /live/, dan raw 11-char ID
+    private val VIDEO_ID_PATTERN = java.util.regex.Pattern.compile(
+        "(?:v=|/shorts/|/embed/|/live/|youtu\\.be/)([A-Za-z0-9_-]{11})"
+    )
+
+    fun extractVideoId(urlOrId: String?): String {
+        if (urlOrId.isNullOrBlank()) return ""
+        if (urlOrId.length == 11 && !urlOrId.contains("/") && !urlOrId.contains("?") && !urlOrId.contains("&")) {
+            return urlOrId
+        }
+        val matcher = VIDEO_ID_PATTERN.matcher(urlOrId)
+        return if (matcher.find()) {
+            matcher.group(1) ?: urlOrId
+        } else if (urlOrId.contains("v=")) {
+            urlOrId.substringAfter("v=").substringBefore("&").substringBefore("?")
+        } else if (urlOrId.contains("/shorts/")) {
+            urlOrId.substringAfter("/shorts/").substringBefore("?").substringBefore("&").substringBefore("/")
+        } else {
+            urlOrId
+        }
+    }
+
+    // DINONAKTIFKAN: 7 seed topik lama yang hanya mengunci pencarian ke Indonesia sehingga konten sangat sedikit
+    // private val FEED_SEEDS = listOf(
+    //     "trending_gaming",
+    //     "video viral indonesia",
+    //     "trending_podcasts_episodes",
+    //     "musik indonesia populer",
+    //     "live",
+    //     "berita terkini terpopuler",
+    //     "gameplay indonesia"
+    // )
+    // BARU: Kumpulan 30 seed topik global dinamis agar feed Home YouTube kaya, melimpah, beragam,
+    // dan selalu berganti konten segar setiap kali ditarik untuk refresh (Pull-to-Refresh)
     private val FEED_SEEDS = listOf(
-        "trending_gaming",
-        "video viral indonesia",
-        "trending_podcasts_episodes",
-        "musik indonesia populer",
-        "live",
-        "berita terkini terpopuler",
-        "gameplay indonesia"
+        "trending now",
+        "viral videos",
+        "top music hits",
+        "trending gaming",
+        "technology breakthroughs",
+        "science discoveries",
+        "cinematic 4k nature",
+        "popular podcasts highlights",
+        "documentary film",
+        "gameplay walkthrough",
+        "creative engineering",
+        "standup comedy best",
+        "lofi hip hop radio",
+        "action movie scenes",
+        "satisfying craftsmanship",
+        "animation showcase",
+        "space exploration nasa",
+        "world street food",
+        "esports tournament",
+        "viral internet culture",
+        "acoustic live session",
+        "epic adventure travel",
+        "automotive supercar",
+        "magic and illusions",
+        "fitness motivation",
+        "behind the scenes cinema",
+        "retro gaming nostalgia",
+        "digital art and design",
+        "unboxing tech",
+        "epic orchestral music"
     )
 
     private var currentSeedIndex = 0
@@ -51,10 +107,20 @@ object YouTubeRepository {
             synchronized(this) {
                 if (!isInitialized) {
                     val downloader = NewPipeDownloader()
+                    // DINONAKTIFKAN: Inisialisasi regional sempit ID ("id", "ID") yang membatasi konten ke Indonesia saja
+                    // NewPipe.init(
+                    //     downloader,
+                    //     Localization("id", "ID"),
+                    //     ContentCountry("ID")
+                    // )
+                    // BARU: Inisialisasi dengan standar open-source global (US ContentCountry) agar feed Shorts, Home, dan Jelajah melimpah tanpa limitasi wilayah
+                    val defaultLocale = java.util.Locale.getDefault()
+                    val lang = defaultLocale.language.ifBlank { "en" }
+                    val country = defaultLocale.country.ifBlank { "US" }
                     NewPipe.init(
                         downloader,
-                        Localization("id", "ID"),
-                        ContentCountry("ID")
+                        Localization(lang, country),
+                        ContentCountry("US")
                     )
                     isInitialized = true
                 }
@@ -80,7 +146,7 @@ object YouTubeRepository {
             val videoItems = searchInfo.relatedItems
                 .filterIsInstance<StreamInfoItem>()
                 .map { item ->
-                    val videoId = item.url.substringAfter("v=").substringBefore("&")
+                    val videoId = extractVideoId(item.url)
                     val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
                     val avatar = item.uploaderAvatars.firstOrNull()?.url
                     VideoItem(
@@ -97,6 +163,8 @@ object YouTubeRepository {
                         uploadDateText = item.textualUploadDate ?: ""
                     )
                 }
+                .filter { it.id.isNotBlank() && it.id.length == 11 }
+                .distinctBy { it.id }
 
             if (videoItems.isNotEmpty()) {
                 Result.success(videoItems)
@@ -110,7 +178,7 @@ object YouTubeRepository {
                 val fallbackItems = kioskInfo.relatedItems
                     .filterIsInstance<StreamInfoItem>()
                     .map { item ->
-                        val videoId = item.url.substringAfter("v=").substringBefore("&")
+                        val videoId = extractVideoId(item.url)
                         val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
                         val avatar = item.uploaderAvatars.firstOrNull()?.url
                         VideoItem(
@@ -127,6 +195,8 @@ object YouTubeRepository {
                             uploadDateText = item.textualUploadDate ?: ""
                         )
                     }
+                    .filter { it.id.isNotBlank() && it.id.length == 11 }
+                    .distinctBy { it.id }
                 Result.success(fallbackItems)
             }
         } catch (e: Exception) {
@@ -149,7 +219,7 @@ object YouTubeRepository {
             val newVideos = searchInfo.relatedItems
                 .filterIsInstance<StreamInfoItem>()
                 .map { item ->
-                    val videoId = item.url.substringAfter("v=").substringBefore("&")
+                    val videoId = extractVideoId(item.url)
                     val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
                     val avatar = item.uploaderAvatars.firstOrNull()?.url
                     VideoItem(
@@ -166,6 +236,7 @@ object YouTubeRepository {
                         uploadDateText = item.textualUploadDate ?: ""
                     )
                 }
+                .filter { it.id.isNotBlank() && it.id.length == 11 }
                 .distinctBy { it.id }
 
             Result.success(newVideos)
@@ -185,7 +256,7 @@ object YouTubeRepository {
             val videos = searchInfo.relatedItems
                 .filterIsInstance<StreamInfoItem>()
                 .map { item ->
-                    val videoId = item.url.substringAfter("v=").substringBefore("&")
+                    val videoId = extractVideoId(item.url)
                     val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
                     val avatar = item.uploaderAvatars.firstOrNull()?.url
                     VideoItem(
@@ -202,6 +273,7 @@ object YouTubeRepository {
                         uploadDateText = item.textualUploadDate ?: ""
                     )
                 }
+                .filter { it.id.isNotBlank() && it.id.length == 11 }
                 .distinctBy { it.id }
 
             Result.success(videos)
@@ -222,11 +294,54 @@ object YouTubeRepository {
     //         val shorts = searchInfo.relatedItems ...
     //     } catch (e: Exception) { Result.failure(e) }
     // }
-    // BARU: Mengambil daftar video Shorts YouTube (#shorts viral / trending) dengan multi-page fetching (20-30+ shorts)
+    // DINONAKTIFKAN: getShortsFeed yang menggunakan query hashtag '#shorts ...' sehingga NewPipeExtractor
+    // hanya mengembalikan 1 video (akibat rak reelShelfRenderer di YouTube tidak dibedah) dan substringAfter("v=") gagal pada /shorts/
+    // suspend fun getShortsFeed(refresh: Boolean = false): Result<List<VideoItem>> = withContext(Dispatchers.IO) {
+    //     try {
+    //         initIfNeeded()
+    //         val query = if (refresh) "#shorts trending indonesia" else "#shorts viral indonesia"
+    //         val service = ServiceList.YouTube
+    //         val searchExtractor = service.getSearchExtractor(query)
+    //         searchExtractor.fetchPage()
+    //         val searchInfo = SearchInfo.getInfo(searchExtractor)
+    //         ...
+    //     } catch (e: Exception) { Result.failure(e) }
+    // }
+
+    // BARU: Kumpulan 20 kueri Shorts global organik (tanpa hashtag #) agar YouTube mengembalikan puluhan videoRenderer penuh
+    private val SHORTS_SEEDS = listOf(
+        "trending shorts",
+        "viral shorts",
+        "best shorts compilation",
+        "satisfying shorts",
+        "funny shorts",
+        "amazing talents shorts",
+        "gaming highlights shorts",
+        "creative animation shorts",
+        "science experiments shorts",
+        "street food shorts",
+        "mind blowing facts shorts",
+        "cinematic shorts",
+        "diy craft shorts",
+        "magic tricks shorts",
+        "skate and sports shorts",
+        "pets and animals funny shorts",
+        "illusions and art shorts",
+        "music live acoustic shorts",
+        "comedy sketches shorts",
+        "inventions and tech shorts"
+    )
+
+    private var shortsSeedIndex = 0
+
+    // BARU: Mengambil feed YouTube Shorts organik (25-50 video vertikal) dengan multi-page fetching & regex ID extraction
     suspend fun getShortsFeed(refresh: Boolean = false): Result<List<VideoItem>> = withContext(Dispatchers.IO) {
         try {
             initIfNeeded()
-            val query = if (refresh) "#shorts trending indonesia" else "#shorts viral indonesia"
+            if (refresh) {
+                shortsSeedIndex = (shortsSeedIndex + 1) % SHORTS_SEEDS.size
+            }
+            val query = SHORTS_SEEDS[shortsSeedIndex]
             val service = ServiceList.YouTube
             val searchExtractor = service.getSearchExtractor(query)
             searchExtractor.fetchPage()
@@ -235,7 +350,7 @@ object YouTubeRepository {
             val itemsList = mutableListOf<StreamInfoItem>()
             itemsList.addAll(searchInfo.relatedItems.filterIsInstance<StreamInfoItem>())
 
-            if (searchInfo.hasNextPage() && itemsList.size < 20) {
+            if (searchInfo.hasNextPage() && itemsList.size < 30) {
                 try {
                     val nextPage = searchExtractor.getPage(searchInfo.nextPage)
                     itemsList.addAll(nextPage.items.filterIsInstance<StreamInfoItem>())
@@ -243,14 +358,18 @@ object YouTubeRepository {
             }
 
             val shorts = itemsList
+                .filter { item ->
+                    // Filter shorts: durasi <= 90 detik atau 0 (belum teridentifikasi oleh NewPipe)
+                    item.duration <= 90L || item.duration <= 0L
+                }
                 .map { item ->
-                    val videoId = item.url.substringAfter("v=").substringBefore("&")
+                    val videoId = extractVideoId(item.url)
                     val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
                     val avatar = item.uploaderAvatars.firstOrNull()?.url
                     VideoItem(
                         id = videoId,
-                        url = item.url,
-                        title = item.name ?: "Untitled",
+                        url = if (item.url.contains("youtube.com") || item.url.contains("youtu.be")) item.url else "https://www.youtube.com/watch?v=$videoId",
+                        title = item.name ?: "Untitled Shorts",
                         uploaderName = item.uploaderName ?: "Unknown Creator",
                         uploaderAvatarUrl = avatar,
                         thumbnailUrl = thumb,
@@ -261,9 +380,60 @@ object YouTubeRepository {
                         uploadDateText = item.textualUploadDate ?: ""
                     )
                 }
+                .filter { it.id.isNotBlank() && it.id.length == 11 }
                 .distinctBy { it.id }
 
             Result.success(shorts)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // BARU: Memuat batch Shorts berikutnya secara berkelanjutan (Infinite Scroll di VerticalPager)
+    suspend fun loadMoreShortsFeed(pageOffset: Int): Result<List<VideoItem>> = withContext(Dispatchers.IO) {
+        try {
+            initIfNeeded()
+            val nextIndex = (shortsSeedIndex + pageOffset) % SHORTS_SEEDS.size
+            val query = SHORTS_SEEDS[nextIndex]
+            val service = ServiceList.YouTube
+            val searchExtractor = service.getSearchExtractor(query)
+            searchExtractor.fetchPage()
+            val searchInfo = SearchInfo.getInfo(searchExtractor)
+
+            val itemsList = mutableListOf<StreamInfoItem>()
+            itemsList.addAll(searchInfo.relatedItems.filterIsInstance<StreamInfoItem>())
+
+            if (searchInfo.hasNextPage() && itemsList.size < 25) {
+                try {
+                    val nextPage = searchExtractor.getPage(searchInfo.nextPage)
+                    itemsList.addAll(nextPage.items.filterIsInstance<StreamInfoItem>())
+                } catch (_: Exception) {}
+            }
+
+            val newShorts = itemsList
+                .filter { item -> item.duration <= 90L || item.duration <= 0L }
+                .map { item ->
+                    val videoId = extractVideoId(item.url)
+                    val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+                    val avatar = item.uploaderAvatars.firstOrNull()?.url
+                    VideoItem(
+                        id = videoId,
+                        url = if (item.url.contains("youtube.com") || item.url.contains("youtu.be")) item.url else "https://www.youtube.com/watch?v=$videoId",
+                        title = item.name ?: "Untitled Shorts",
+                        uploaderName = item.uploaderName ?: "Unknown Creator",
+                        uploaderAvatarUrl = avatar,
+                        thumbnailUrl = thumb,
+                        durationSeconds = item.duration,
+                        durationText = VideoItem.formatDuration(item.duration),
+                        viewCount = item.viewCount,
+                        viewCountText = VideoItem.formatViews(item.viewCount),
+                        uploadDateText = item.textualUploadDate ?: ""
+                    )
+                }
+                .filter { it.id.isNotBlank() && it.id.length == 11 }
+                .distinctBy { it.id }
+
+            Result.success(newShorts)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -285,55 +455,125 @@ object YouTubeRepository {
     //         Result.failure(e)
     //     }
     // }
-    // BARU: Mengambil daftar video kategori Explore / Jelajah lengkap (20-50 thumbnails) dengan Kiosk Trending resmi & multi-page fetch
-    suspend fun getExploreVideos(category: String): Result<List<VideoItem>> = withContext(Dispatchers.IO) {
+    // DINONAKTIFKAN: getExploreVideos dengan 1 query statis per kategori yang membuat Pull to Refresh menampilkan hasil sama persis
+    // suspend fun getExploreVideos(category: String): Result<List<VideoItem>> = withContext(Dispatchers.IO) {
+    //     ...
+    // }
+
+    // BARU: Taksonomi Seed Global Kaya untuk Tab Jelajah / Explore (35+ Variasi Topik Dunia)
+    private val EXPLORE_TRENDING_SEEDS = listOf(
+        "kiosk_default",
+        "trending viral worldwide",
+        "top trending videos today",
+        "popular entertainment hits",
+        "viral moments 2026",
+        "breaking trending topics"
+    )
+
+    private val EXPLORE_MUSIC_SEEDS = listOf(
+        "Top Music Hits Global",
+        "Billboard Hot 100",
+        "Popular Music Videos 2026",
+        "Global Viral Hits Today",
+        "Trending Songs Acoustic",
+        "Top EDM and Dance Hits",
+        "Lofi Chill Beats Radio",
+        "Hip Hop and RnB Charts",
+        "Rock and Indie Anthems"
+    )
+
+    private val EXPLORE_GAMING_SEEDS = listOf(
+        "Trending Gaming Gameplay",
+        "Popular Games Highlights",
+        "Top Esports Moments",
+        "New Game Releases 2026",
+        "Best Gaming Streamers Clips",
+        "Action RPG Gameplay 4K",
+        "Minecraft Builds and Survival",
+        "Open World Adventure Games",
+        "Multiplayer Funny Gaming Moments"
+    )
+
+    private val EXPLORE_NEWS_SEEDS = listOf(
+        "Top World News Today",
+        "Breaking News Live Coverage",
+        "Technology and AI Breakthroughs",
+        "Science Discoveries News",
+        "Global Economy and Markets",
+        "Space Exploration Updates",
+        "Climate and Nature News"
+    )
+
+    private val EXPLORE_ANIMATION_SEEDS = listOf(
+        "Trending Animation Shorts",
+        "CGI 3D Short Films 4K",
+        "Best Animated Short Films",
+        "Indie Animation Showcase",
+        "Anime Highlights 4K",
+        "Stop Motion Animation",
+        "Blender 3D CGI Showcase",
+        "Visual Storytelling Animation"
+    )
+
+    private val exploreCategoryIndices = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
+    // BARU: Mengambil video kategori Explore dengan rotasi seed global dinamis setiap kali Pull to Refresh
+    suspend fun getExploreVideos(category: String, refresh: Boolean = false): Result<List<VideoItem>> = withContext(Dispatchers.IO) {
         try {
             initIfNeeded()
             val service = ServiceList.YouTube
 
-            if (category == "Trending") {
-                // Ambil dari Kiosk Trending resmi YouTube NewPipe (memberikan 30-50 video trending teratas)
-                val kioskList = service.kioskList
-                val defaultKiosk = kioskList.defaultKioskId ?: "Trending"
-                val extractor = kioskList.getExtractorById(defaultKiosk, null)
-                extractor.fetchPage()
-                val kioskInfo = KioskInfo.getInfo(extractor)
-                val items = kioskInfo.relatedItems
-                    .filterIsInstance<StreamInfoItem>()
-                    .map { item ->
-                        val videoId = item.url.substringAfter("v=").substringBefore("&")
-                        val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
-                        val avatar = item.uploaderAvatars.firstOrNull()?.url
-                        VideoItem(
-                            id = videoId,
-                            url = item.url,
-                            title = item.name ?: "Untitled",
-                            uploaderName = item.uploaderName ?: "Unknown Creator",
-                            uploaderAvatarUrl = avatar,
-                            thumbnailUrl = thumb,
-                            durationSeconds = item.duration,
-                            durationText = VideoItem.formatDuration(item.duration),
-                            viewCount = item.viewCount,
-                            viewCountText = VideoItem.formatViews(item.viewCount),
-                            uploadDateText = item.textualUploadDate ?: ""
-                        )
+            val seedList = when (category) {
+                "Musik" -> EXPLORE_MUSIC_SEEDS
+                "Gaming" -> EXPLORE_GAMING_SEEDS
+                "Berita" -> EXPLORE_NEWS_SEEDS
+                "Animasi" -> EXPLORE_ANIMATION_SEEDS
+                else -> EXPLORE_TRENDING_SEEDS
+            }
+
+            val currentIndex = exploreCategoryIndices.getOrDefault(category, 0)
+            val nextIndex = if (refresh) (currentIndex + 1) % seedList.size else currentIndex
+            exploreCategoryIndices[category] = nextIndex
+
+            val selectedSeed = seedList[nextIndex]
+
+            if (category == "Trending" && selectedSeed == "kiosk_default") {
+                try {
+                    val kioskList = service.kioskList
+                    val defaultKiosk = kioskList.defaultKioskId ?: "Trending"
+                    val extractor = kioskList.getExtractorById(defaultKiosk, null)
+                    extractor.fetchPage()
+                    val kioskInfo = KioskInfo.getInfo(extractor)
+                    val items = kioskInfo.relatedItems
+                        .filterIsInstance<StreamInfoItem>()
+                        .map { item ->
+                            val videoId = extractVideoId(item.url)
+                            val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+                            val avatar = item.uploaderAvatars.firstOrNull()?.url
+                            VideoItem(
+                                id = videoId,
+                                url = item.url,
+                                title = item.name ?: "Untitled",
+                                uploaderName = item.uploaderName ?: "Unknown Creator",
+                                uploaderAvatarUrl = avatar,
+                                thumbnailUrl = thumb,
+                                durationSeconds = item.duration,
+                                durationText = VideoItem.formatDuration(item.duration),
+                                viewCount = item.viewCount,
+                                viewCountText = VideoItem.formatViews(item.viewCount),
+                                uploadDateText = item.textualUploadDate ?: ""
+                            )
+                        }
+                        .filter { it.id.isNotBlank() && it.id.length == 11 }
+                        .distinctBy { it.id }
+
+                    if (items.isNotEmpty()) {
+                        return@withContext Result.success(items)
                     }
-                    .distinctBy { it.id }
-
-                if (items.isNotEmpty()) {
-                    return@withContext Result.success(items)
-                }
+                } catch (_: Exception) {}
             }
 
-            // Untuk kategori Musik, Gaming, Berita, Animasi, atau fallback Trending
-            val query = when (category) {
-                "Musik" -> "Top Musik Indonesia Populer"
-                "Gaming" -> "Gaming Indonesia Populer"
-                "Berita" -> "Berita Terkini Indonesia"
-                "Animasi" -> "Animasi Indonesia Terpopuler"
-                else -> "Trending Indonesia Hari Ini"
-            }
-
+            val query = if (selectedSeed == "kiosk_default") "trending viral worldwide" else selectedSeed
             val searchExtractor = service.getSearchExtractor(query)
             searchExtractor.fetchPage()
             val searchInfo = SearchInfo.getInfo(searchExtractor)
@@ -341,8 +581,7 @@ object YouTubeRepository {
             val streamItems = mutableListOf<StreamInfoItem>()
             streamItems.addAll(searchInfo.relatedItems.filterIsInstance<StreamInfoItem>())
 
-            // Ambil halaman kedua untuk memastikan daftar terisi minimal 20-30 thumbnails
-            if (searchInfo.hasNextPage() && streamItems.size < 20) {
+            if (searchInfo.hasNextPage() && streamItems.size < 25) {
                 try {
                     val nextPage = searchExtractor.getPage(searchInfo.nextPage)
                     streamItems.addAll(nextPage.items.filterIsInstance<StreamInfoItem>())
@@ -351,7 +590,7 @@ object YouTubeRepository {
 
             val videos = streamItems
                 .map { item ->
-                    val videoId = item.url.substringAfter("v=").substringBefore("&")
+                    val videoId = extractVideoId(item.url)
                     val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
                     val avatar = item.uploaderAvatars.firstOrNull()?.url
                     VideoItem(
@@ -368,6 +607,7 @@ object YouTubeRepository {
                         uploadDateText = item.textualUploadDate ?: ""
                     )
                 }
+                .filter { it.id.isNotBlank() && it.id.length == 11 }
                 .distinctBy { it.id }
 
             Result.success(videos)
@@ -376,27 +616,30 @@ object YouTubeRepository {
         }
     }
 
-    // BARU: Memuat batch video tambahan untuk kategori tertentu (Infinite Scroll)
+    // BARU: Memuat batch video tambahan untuk kategori Jelajah (Infinite Scroll)
     suspend fun loadMoreExploreVideos(category: String, pageOffset: Int): Result<List<VideoItem>> = withContext(Dispatchers.IO) {
         try {
             initIfNeeded()
-            val queryList = when (category) {
-                "Musik" -> listOf("Top Musik Indonesia Hits", "Lagu Baru Populer Indonesia", "Musik Akustik Indonesia")
-                "Gaming" -> listOf("Gameplay Indonesia Populer", "Game Walkthrough Indonesia", "Streamer Game Indonesia")
-                "Berita" -> listOf("Kabar Berita Terkini", "Berita Nasional Indonesia Hari Ini", "Update Berita Terhangat")
-                "Animasi" -> listOf("Animasi Seru Populer", "Kartun Indonesia", "Short Animation Populer")
-                else -> listOf("Viral Indonesia Hari Ini", "Video Populer Indonesia", "Trending Topik Indonesia")
+            val seedList = when (category) {
+                "Musik" -> EXPLORE_MUSIC_SEEDS
+                "Gaming" -> EXPLORE_GAMING_SEEDS
+                "Berita" -> EXPLORE_NEWS_SEEDS
+                "Animasi" -> EXPLORE_ANIMATION_SEEDS
+                else -> EXPLORE_TRENDING_SEEDS
             }
-            val targetQuery = queryList[pageOffset % queryList.size]
+            val baseIndex = exploreCategoryIndices.getOrDefault(category, 0)
+            val targetSeed = seedList[(baseIndex + pageOffset) % seedList.size]
+            val query = if (targetSeed == "kiosk_default") "trending viral worldwide" else targetSeed
+
             val service = ServiceList.YouTube
-            val searchExtractor = service.getSearchExtractor(targetQuery)
+            val searchExtractor = service.getSearchExtractor(query)
             searchExtractor.fetchPage()
             val searchInfo = SearchInfo.getInfo(searchExtractor)
 
             val videos = searchInfo.relatedItems
                 .filterIsInstance<StreamInfoItem>()
                 .map { item ->
-                    val videoId = item.url.substringAfter("v=").substringBefore("&")
+                    val videoId = extractVideoId(item.url)
                     val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
                     val avatar = item.uploaderAvatars.firstOrNull()?.url
                     VideoItem(
@@ -413,6 +656,7 @@ object YouTubeRepository {
                         uploadDateText = item.textualUploadDate ?: ""
                     )
                 }
+                .filter { it.id.isNotBlank() && it.id.length == 11 }
                 .distinctBy { it.id }
 
             Result.success(videos)
@@ -470,13 +714,16 @@ object YouTubeRepository {
     suspend fun getVideoPlaybackDetails(videoIdOrUrl: String): Result<VideoPlaybackDetails> = withContext(Dispatchers.IO) {
         try {
             initIfNeeded()
-            val videoId = if (videoIdOrUrl.contains("v=")) {
-                videoIdOrUrl.substringAfter("v=").substringBefore("&")
-            } else if (videoIdOrUrl.startsWith("http")) {
-                videoIdOrUrl.substringAfterLast("/")
-            } else {
-                videoIdOrUrl
-            }
+            // DINONAKTIFKAN: Ekstraksi ID sederhana yang gagal jika URL berupa /shorts/ atau tautan dengan query params
+            // val videoId = if (videoIdOrUrl.contains("v=")) {
+            //     videoIdOrUrl.substringAfter("v=").substringBefore("&")
+            // } else if (videoIdOrUrl.startsWith("http")) {
+            //     videoIdOrUrl.substringAfterLast("/")
+            // } else {
+            //     videoIdOrUrl
+            // }
+            // BARU: Ekstraksi ID video universal (standar DeArrow PipePipe) yang menangani semua format URL YouTube
+            val videoId = extractVideoId(videoIdOrUrl)
 
             // BARU: Kembalikan dari cache memori jika detail video sudah pernah diekstrak (0 ms latensi jaringan)
             val cached = playbackDetailsCache.get(videoId)
@@ -484,7 +731,7 @@ object YouTubeRepository {
                 return@withContext Result.success(cached)
             }
 
-            val url = if (videoIdOrUrl.startsWith("http")) videoIdOrUrl else "https://www.youtube.com/watch?v=$videoIdOrUrl"
+            val url = if (videoIdOrUrl.startsWith("http")) videoIdOrUrl else "https://www.youtube.com/watch?v=$videoId"
             val info = StreamInfo.getInfo(ServiceList.YouTube, url)
 
             val thumb = info.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
@@ -593,7 +840,7 @@ object YouTubeRepository {
             val related = info.relatedItems
                 .filterIsInstance<StreamInfoItem>()
                 .map { item ->
-                    val relId = item.url.substringAfter("v=").substringBefore("&")
+                    val relId = extractVideoId(item.url)
                     val relThumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$relId/hqdefault.jpg"
                     val relAvatar = item.uploaderAvatars.firstOrNull()?.url
                     VideoItem(

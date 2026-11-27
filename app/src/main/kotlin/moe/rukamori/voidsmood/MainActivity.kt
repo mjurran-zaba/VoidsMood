@@ -63,11 +63,13 @@ import moe.rukamori.voidsmood.ui.theme.VoidsMoodTheme
 import moe.rukamori.voidsmood.ui.viewmodel.HomeViewModel
 import moe.rukamori.voidsmood.ui.viewmodel.PlayerMode
 import moe.rukamori.voidsmood.ui.viewmodel.PlayerViewModel
+import moe.rukamori.voidsmood.ui.viewmodel.ShortsViewModel
 
 class MainActivity : ComponentActivity() {
 
     private val homeViewModel: HomeViewModel by viewModels()
     private val playerViewModel: PlayerViewModel by viewModels()
+    private val shortsViewModel: ShortsViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -125,10 +127,15 @@ class MainActivity : ComponentActivity() {
                     label = "miniPlayerOffsetY"
                 )
 
-                // Jeda pemutaran miniplayer jika pengguna berpindah ke tab Shorts agar audio tidak bertabrakan
+                // Jeda pemutaran miniplayer jika pengguna berpindah ke tab Shorts, atau jeda player Shorts jika keluar dari tab Shorts
                 LaunchedEffect(currentTab) {
-                    if (currentTab == NavigationTab.SHORTS && playerMode == PlayerMode.MINI && isPlaying) {
-                        playerViewModel.togglePlayPause()
+                    if (currentTab == NavigationTab.SHORTS) {
+                        if (playerMode == PlayerMode.MINI && isPlaying) {
+                            playerViewModel.togglePlayPause()
+                        }
+                        shortsViewModel.resumePlayer()
+                    } else {
+                        shortsViewModel.pausePlayer()
                     }
                 }
 
@@ -214,6 +221,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                         NavigationTab.SHORTS -> {
                                             ShortsScreen(
+                                                viewModel = shortsViewModel,
                                                 onVideoSelect = { video ->
                                                     LocalLibraryRepository.addToHistory(video)
                                                     playerViewModel.openVideo(video)

@@ -87,7 +87,10 @@ fun ExploreScreen(
         }
 
         scope.launch {
-            val result = YouTubeRepository.getExploreVideos(category)
+            // DINONAKTIFKAN: getExploreVideos lama tanpa parameter refresh sehingga setiap pull-to-refresh memuat query yang sama persis
+            // val result = YouTubeRepository.getExploreVideos(category)
+            // BARU: getExploreVideos dengan rotasi seed global dinamis setiap kali pull-to-refresh (isRefresh = true)
+            val result = YouTubeRepository.getExploreVideos(category, refresh = isRefresh)
             result.onSuccess { list ->
                 videos = list
                 isLoading = false
