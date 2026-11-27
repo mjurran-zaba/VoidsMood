@@ -4,7 +4,10 @@ import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
+    // DINONAKTIFKAN: AGP 9.0+ sudah memiliki dukungan bawaan untuk Kotlin (agp-built-in-kotlin),
+    // menerapkan plugin 'org.jetbrains.kotlin.android' menyebabkan PluginApplicationException pada Gradle 9.x.
+    // alias(libs.plugins.kotlin.android)
+    // BARU: Hanya terapkan plugin aplikasi Android dan compiler Jetpack Compose
     alias(libs.plugins.compose.compiler)
 }
 
@@ -93,6 +96,13 @@ android {
     dependenciesInfo {
         includeInApk = false
         includeInBundle = false
+    }
+}
+
+// BARU: Konfigurasi target JVM 21 untuk task kompilasi Kotlin
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
     }
 }
 
