@@ -38,11 +38,18 @@ import androidx.compose.ui.unit.dp
 import moe.rukamori.voidsmood.ui.theme.IceWhite
 import moe.rukamori.voidsmood.ui.theme.TextMuted
 
-// Definisi 4 Tab Navigasi Utama VoidsMood
+// DINONAKTIFKAN: 4 tab lama dengan SUBSCRIPTIONS
+// enum class NavigationTab(val id: String) {
+//     HOME("home"),
+//     EXPLORE("explore"),
+//     SUBSCRIPTIONS("subscriptions"),
+//     LIBRARY("library")
+// }
+// BARU: 4 Tab Navigasi Utama VoidsMood sesuai preferensi user: Home, Shorts, Explore, dan Pustaka & Riwayat
 enum class NavigationTab(val id: String) {
     HOME("home"),
+    SHORTS("shorts"),
     EXPLORE("explore"),
-    SUBSCRIPTIONS("subscriptions"),
     LIBRARY("library")
 }
 
@@ -136,8 +143,8 @@ fun AppleBottomNavigationBar(
                         ) {
                             when (tab) {
                                 NavigationTab.HOME -> LucideHome(tint = tintColor, size = 22.dp)
+                                NavigationTab.SHORTS -> LucideShorts(tint = tintColor, size = 22.dp)
                                 NavigationTab.EXPLORE -> LucideCompass(tint = tintColor, size = 22.dp)
-                                NavigationTab.SUBSCRIPTIONS -> LucideSubscriptions(tint = tintColor, size = 22.dp)
                                 NavigationTab.LIBRARY -> LucideLibrary(tint = tintColor, size = 22.dp)
                             }
                         }

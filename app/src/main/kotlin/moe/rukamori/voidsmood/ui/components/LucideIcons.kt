@@ -115,6 +115,37 @@ fun LucideSubscriptions(
     }
 }
 
+// BARU: Ikon YouTube Shorts resmi dengan garis sudut tumpul vertikal dan tombol play di tengahnya
+@Composable
+fun LucideShorts(
+    modifier: Modifier = Modifier,
+    tint: Color = Color.White,
+    size: Dp = 24.dp,
+    strokeWidth: Dp = 2.dp
+) {
+    Canvas(modifier = modifier.size(size)) {
+        val w = this.size.width
+        val h = this.size.height
+        val stroke = strokeWidth.toPx()
+
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(w * 0.22f, h * 0.12f),
+            size = Size(w * 0.56f, h * 0.76f),
+            cornerRadius = CornerRadius(w * 0.14f, w * 0.14f),
+            style = Stroke(stroke, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        )
+
+        val playPath = Path().apply {
+            moveTo(w * 0.44f, h * 0.38f)
+            lineTo(w * 0.62f, h * 0.50f)
+            lineTo(w * 0.44f, h * 0.62f)
+            close()
+        }
+        drawPath(playPath, tint)
+    }
+}
+
 @Composable
 fun LucideLibrary(
     modifier: Modifier = Modifier,

@@ -28,6 +28,7 @@ import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,13 +45,17 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import moe.rukamori.voidsmood.data.repository.LocalLibraryRepository
 import moe.rukamori.voidsmood.ui.components.AppleBottomNavigationBar
 import moe.rukamori.voidsmood.ui.components.MiniPlayerBar
 import moe.rukamori.voidsmood.ui.components.NavigationTab
 import moe.rukamori.voidsmood.ui.components.VoidsTopAppBar
+import moe.rukamori.voidsmood.ui.screens.ExploreScreen
 import moe.rukamori.voidsmood.ui.screens.HomeScreen
+import moe.rukamori.voidsmood.ui.screens.LibraryScreen
 import moe.rukamori.voidsmood.ui.screens.PlayerScreen
 import moe.rukamori.voidsmood.ui.screens.SearchScreen
+import moe.rukamori.voidsmood.ui.screens.ShortsScreen
 import moe.rukamori.voidsmood.ui.theme.PureBlack
 import moe.rukamori.voidsmood.ui.theme.TextMuted
 import moe.rukamori.voidsmood.ui.theme.VoidsMoodTheme
@@ -66,6 +71,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        LocalLibraryRepository.init(this)
 
         setContent {
             VoidsMoodTheme {
@@ -118,6 +124,13 @@ class MainActivity : ComponentActivity() {
                     label = "miniPlayerOffsetY"
                 )
 
+                // Jeda pemutaran miniplayer jika pengguna berpindah ke tab Shorts agar audio tidak bertabrakan
+                LaunchedEffect(currentTab) {
+                    if (currentTab == NavigationTab.SHORTS && playerMode == PlayerMode.MINI && isPlaying) {
+                        playerViewModel.togglePlayPause()
+                    }
+                }
+
                 // State kontrol kemunculan layer pencarian penuh dengan animasi slide-to-left
                 var isSearchActive by remember { mutableStateOf(false) }
 
@@ -153,75 +166,75 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.fillMaxSize(),
                                 containerColor = Color.Transparent,
                                 topBar = {
-                                    VoidsTopAppBar(
-                                        onMenuClick = {
-                                            scope.launch {
-                                                if (drawerState.isClosed) drawerState.open() else drawerState.close()
+                                    // Sembunyikan top bar bawaan pada tab Shorts agar pengalaman video reels vertikal 9:16 murni layar penuh
+                                    if (currentTab != NavigationTab.SHORTS) {
+                                        VoidsTopAppBar(
+                                            onMenuClick = {
+                                                scope.launch {
+                                                    if (drawerState.isClosed) drawerState.open() else drawerState.close()
+                                                }
+                                            },
+                                            onSearchClick = {
+                                                isSearchActive = true
                                             }
-                                        },
-                                        onSearchClick = {
-                                            isSearchActive = true
-                                        }
-                                    )
+                                        )
+                                    }
                                 }
                             ) { innerPadding ->
                                 Box(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .padding(innerPadding)
+                                        .padding(if (currentTab == NavigationTab.SHORTS) androidx.compose.foundation.layout.PaddingValues(0.dp) else innerPadding)
                                         .nestedScroll(nestedScrollConnection)
                                 ) {
-                                    // Tampilan Konten Berdasarkan 4 Tab Navigasi
+                                    // DINONAKTIFKAN: 4 tab lama dengan SUBSCRIPTIONS placeholder
+                                    // when (currentTab) {
+                                    //     NavigationTab.HOME -> { ... }
+                                    //     NavigationTab.EXPLORE -> { ... }
+                                    //     NavigationTab.SUBSCRIPTIONS -> { ... }
+                                    //     NavigationTab.LIBRARY -> { ... }
+                                    // }
+                                    // BARU: 4 Tab pilihan user aktif penuh: Home, Shorts (Reels/vertikal), Explore, dan Pustaka & Riwayat
                                     when (currentTab) {
                                         NavigationTab.HOME -> {
                                             HomeScreen(
                                                 viewModel = homeViewModel,
                                                 onVideoClick = { video ->
+                                                    LocalLibraryRepository.addToHistory(video)
+                                                    playerViewModel.openVideo(video)
+                                                }
+                                            )
+                                        }
+                                        NavigationTab.SHORTS -> {
+                                            ShortsScreen(
+                                                onVideoSelect = { video ->
+                                                    LocalLibraryRepository.addToHistory(video)
                                                     playerViewModel.openVideo(video)
                                                 }
                                             )
                                         }
                                         NavigationTab.EXPLORE -> {
-                                            Box(
-                                                modifier = Modifier.fillMaxSize(),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Text(
-                                                    text = "Eksplorasi Kategori (Segera Hadir)",
-                                                    color = TextMuted,
-                                                    fontSize = 15.sp
-                                                )
-                                            }
-                                        }
-                                        NavigationTab.SUBSCRIPTIONS -> {
-                                            Box(
-                                                modifier = Modifier.fillMaxSize(),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Text(
-                                                    text = "Langganan Lokal (Segera Hadir)",
-                                                    color = TextMuted,
-                                                    fontSize = 15.sp
-                                                )
-                                            }
+                                            ExploreScreen(
+                                                onVideoClick = { video ->
+                                                    LocalLibraryRepository.addToHistory(video)
+                                                    playerViewModel.openVideo(video)
+                                                }
+                                            )
                                         }
                                         NavigationTab.LIBRARY -> {
-                                            Box(
-                                                modifier = Modifier.fillMaxSize(),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Text(
-                                                    text = "Pustaka & Riwayat (Segera Hadir)",
-                                                    color = TextMuted,
-                                                    fontSize = 15.sp
-                                                )
-                                            }
+                                            LibraryScreen(
+                                                onVideoClick = { video ->
+                                                    LocalLibraryRepository.addToHistory(video)
+                                                    playerViewModel.openVideo(video)
+                                                }
+                                            )
                                         }
                                     }
 
                                     // BARU: MiniPlayer YouTube Standar (Opsi 1)
                                     // Muncul tepat di atas AppleBottomNavigationBar saat video diminimalkan
-                                    if (playerMode == PlayerMode.MINI && activeVideo != null) {
+                                    // Disembunyikan saat di tab Shorts agar tidak menutupi tampilan video reels
+                                    if (playerMode == PlayerMode.MINI && activeVideo != null && currentTab != NavigationTab.SHORTS) {
                                         MiniPlayerBar(
                                             video = activeVideo!!,
                                             isPlaying = isPlaying,
