@@ -210,25 +210,40 @@ fun ShortsScreen(
                     pageCount = { shortsList.size }
                 )
 
-                // BARU: Reset scroll ke halaman teratas (page 0) saat shortsList di-refresh dengan batch video baru
-                LaunchedEffect(shortsList) {
-                    if (shortsList.isNotEmpty() && pagerState.currentPage != 0) {
+                // DINONAKTIFKAN: Reset scroll ke halaman 0 setiap kali shortsList berubah (terpicu saat pagination loadMore atau update nama kreator) yang menyebabkan pager tersentak kembali ke video 1
+                // LaunchedEffect(shortsList) {
+                //     if (shortsList.isNotEmpty() && pagerState.currentPage != 0) {
+                //         try {
+                //             pagerState.scrollToPage(0)
+                //         } catch (_: Exception) {}
+                //     }
+                // }
+
+                // BARU: Reset scroll ke halaman 0 HANYA saat gestur pull-to-refresh dilakukan pengguna
+                LaunchedEffect(isRefreshing) {
+                    if (isRefreshing && pagerState.currentPage != 0) {
                         try {
                             pagerState.scrollToPage(0)
                         } catch (_: Exception) {}
                     }
                 }
 
-                // BARU: Pindah video di ExoPlayer saat halaman pager digeser ke video berikutnya / sebelumnya
-                LaunchedEffect(pagerState.currentPage) {
+                // DINONAKTIFKAN: LaunchedEffect(pagerState.currentPage) yang memicu play saat halaman masih bergeser di tengah gestur
+                // LaunchedEffect(pagerState.currentPage) {
+                //     if (shortsList.isNotEmpty()) {
+                //         viewModel.playShortAt(pagerState.currentPage)
+                //     }
+                // }
+                // BARU: Eksekusi pemutaran video HANYA saat halaman telah terkunci rapi (settledPage) setelah usapan jari selesai
+                LaunchedEffect(pagerState.settledPage) {
                     if (shortsList.isNotEmpty()) {
-                        viewModel.playShortAt(pagerState.currentPage)
+                        viewModel.playShortAt(pagerState.settledPage)
                     }
                 }
 
                 // BARU: Infinite Scroll - Muat lebih banyak shorts saat pengguna mendekati 4 item terakhir di pager
-                LaunchedEffect(pagerState.currentPage, shortsList.size) {
-                    if (shortsList.isNotEmpty() && pagerState.currentPage >= shortsList.size - 4 && !isLoadingMore) {
+                LaunchedEffect(pagerState.settledPage, shortsList.size) {
+                    if (shortsList.isNotEmpty() && pagerState.settledPage >= shortsList.size - 4 && !isLoadingMore) {
                         viewModel.loadMore()
                     }
                 }
@@ -360,6 +375,13 @@ private fun ShortsPlayerPage(
         exoPlayer.addListener(listener)
         onDispose {
             exoPlayer.removeListener(listener)
+        }
+    }
+
+    // BARU: Reset status render pertama saat halaman tidak aktif agar thumbnail halaman selalu menutup frame video lama saat digeser kembali
+    LaunchedEffect(isActive) {
+        if (!isActive) {
+            hasRenderedFirstFrame = false
         }
     }
 

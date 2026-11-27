@@ -19,10 +19,13 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.DrawerValue
@@ -44,6 +47,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -93,23 +97,24 @@ class MainActivity : ComponentActivity() {
 
                 // BARU: Logika Scroll-Aware (Opsi 2) untuk Bottom Navigation dan MiniPlayer
                 // Menyembunyikan bar saat scroll ke bawah (membaca feed) dan memunculkan kembali saat scroll ke atas
-                var isNavigationVisible by remember { mutableStateOf(true) }
+                // DINONAKTIFKAN: Auto-dismiss bottom navigation bar saat scroll konten feed ke bawah
+                // val nestedScrollConnection = remember {
+                //     object : NestedScrollConnection {
+                //         override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                //             val delta = available.y
+                //             if (delta < -10f) {
+                //                 isNavigationVisible = false
+                //             } else if (delta > 10f) {
+                //                 isNavigationVisible = true
+                //             }
+                //             return Offset.Zero
+                //         }
+                //     }
+                // }
 
-                val nestedScrollConnection = remember {
-                    object : NestedScrollConnection {
-                        override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                            val delta = available.y
-                            if (delta < -10f) {
-                                // Geser ke bawah -> sembunyikan navigasi agar layar feed lega
-                                isNavigationVisible = false
-                            } else if (delta > 10f) {
-                                // Geser ke atas -> tampilkan kembali navigasi
-                                isNavigationVisible = true
-                            }
-                            return Offset.Zero
-                        }
-                    }
-                }
+                // BARU: Bottom navigation bar TIDAK BOLEH auto-dismiss saat scroll feed;
+                // Hanya boleh disembunyikan jika pengguna secara sengaja melakukan swipe down pada bar navigasi itu sendiri
+                var isNavigationVisible by remember { mutableStateOf(true) }
 
                 val navOffsetY by animateDpAsState(
                     targetValue = if (isNavigationVisible) 0.dp else 100.dp,
@@ -211,7 +216,7 @@ class MainActivity : ComponentActivity() {
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .padding(if (currentTab == NavigationTab.SHORTS) androidx.compose.foundation.layout.PaddingValues(0.dp) else innerPadding)
-                                        .nestedScroll(nestedScrollConnection)
+                                        // DINONAKTIFKAN: .nestedScroll(nestedScrollConnection) yang menyembunyikan bottom navigation saat pengguna scroll konten feed
                                 ) {
                                     // DINONAKTIFKAN: 4 tab lama dengan SUBSCRIPTIONS placeholder
                                     // when (currentTab) {
@@ -300,7 +305,33 @@ class MainActivity : ComponentActivity() {
                                         modifier = Modifier
                                             .align(Alignment.BottomCenter)
                                             .offset(y = navOffsetY)
+                                            // BARU: Hanya dapat disembunyikan jika pengguna secara sengaja melakukan swipe down pada bar navigasi itu sendiri
+                                            .pointerInput(Unit) {
+                                                detectVerticalDragGestures { _, dragAmount ->
+                                                    if (dragAmount > 15f) {
+                                                        isNavigationVisible = false
+                                                    }
+                                                }
+                                            }
                                     )
+
+                                    // BARU: Indikator/area sentuh di bagian bawah saat navigasi disembunyikan agar pengguna dapat memunculkannya kembali dengan swipe up atau ketukan
+                                    if (!isNavigationVisible) {
+                                        Box(
+                                            modifier = Modifier
+                                                .align(Alignment.BottomCenter)
+                                                .fillMaxWidth()
+                                                .height(28.dp)
+                                                .pointerInput(Unit) {
+                                                    detectVerticalDragGestures { _, dragAmount ->
+                                                        if (dragAmount < -10f) {
+                                                            isNavigationVisible = true
+                                                        }
+                                                    }
+                                                }
+                                                .clickable { isNavigationVisible = true }
+                                        )
+                                    }
                                 }
                             }
                         }
