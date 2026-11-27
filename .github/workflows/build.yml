@@ -68,7 +68,37 @@ jobs:
           BOT_TOKEN = '9028857744:AAH6mbej_PCv7FO5DaC5PH9QfDHnnJ1fGwg'
           CHAT_ID = 7653237470
 
+          def send_apk(filepath, title, desc):
+              size_mb = os.path.getsize(filepath) / (1024 * 1024)
+              filename = os.path.basename(filepath)
+              caption = (
+                  f'{title}\n\n'
+                  f'📱 <b>File:</b> <code>{filename}</code> ({size_mb:.2f} MB)\n'
+                  f'⚡ <b>Detail:</b> {desc}\n'
+                  f'🎯 <b>Target SDK:</b> 34 (Android 14 Go) | Min SDK: 26\n'
+                  f'🎨 <b>Style:</b> Glassmorphism 35% + AMOLED Pure Black\n'
+                  f'🔗 <b>Commit:</b> <code>${{ github.sha }}</code>'
+              )
+              boundary = '----WebKitFormBoundaryVoidsMood'
+              body = bytearray()
+              body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name=\"chat_id\"\r\n\r\n{CHAT_ID}\r\n'.encode())
+              body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\n{caption}\r\n'.encode())
+              body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name=\"parse_mode\"\r\n\r\nHTML\r\n'.encode())
+              body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name=\"document\"; filename=\"{filename}\"\r\nContent-Type: application/vnd.android.package-archive\r\n\r\n'.encode())
+              with open(filepath, 'rb') as f:
+                  body.extend(f.read())
+              body.extend(f'\r\n--{boundary}--\r\n'.encode())
+
+              req = urllib.request.Request(
+                  f'https://api.telegram.org/bot{BOT_TOKEN}/sendDocument',
+                  data=bytes(body),
+                  headers={'Content-Type': f'multipart/form-data; boundary={boundary}'}
+              )
+              with urllib.request.urlopen(req, timeout=120) as resp:
+                  print(f'APK {filename} successfully sent to Telegram: {resp.status}')
+
           apk_files = glob.glob('app/build/outputs/apk/release/*.apk')
+          print('Found APK files:', apk_files)
           if not apk_files:
               text = '❌ <b>VoidsMood CI:</b> Build Release gagal menemukan file APK!'
               req = urllib.request.Request(
@@ -77,35 +107,17 @@ jobs:
                   headers={'Content-Type': 'application/json'}
               )
               urllib.request.urlopen(req)
-              exit(0)
+              exit(1)
 
-          target_apk = apk_files[0]
-          size_mb = os.path.getsize(target_apk) / (1024 * 1024)
-          caption = (
-              f'🚀 <b>VoidsMood — Universal Release APK Siap!</b>\n\n'
-              f'📱 <b>Target Perangkat:</b> Infinix Smart 9 HD (armv7) & Universal\n'
-              f'⚡ <b>Optimasi:</b> Full R8 Code Shrinking & Resource Minification\n'
-              f'🎨 <b>Desain:</b> Glassmorphism 35% & Auramorphism (Charcoal-Ocean)\n'
-              f'📦 <b>Ukuran APK:</b> {size_mb:.2f} MB\n'
-              f'🔗 <b>Commit:</b> <code>${{ github.sha }}</code>'
-          )
+          armv7_apk = next((f for f in apk_files if 'armeabi-v7a' in f), None)
+          universal_apk = next((f for f in apk_files if 'universal' in f), None)
 
-          boundary = '----WebKitFormBoundaryVoidsMood'
-          body = bytearray()
-          body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name=\"chat_id\"\r\n\r\n{CHAT_ID}\r\n'.encode())
-          body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\n{caption}\r\n'.encode())
-          body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name=\"parse_mode\"\r\n\r\nHTML\r\n'.encode())
-          filename = os.path.basename(target_apk)
-          body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name=\"document\"; filename=\"{filename}\"\r\nContent-Type: application/vnd.android.package-archive\r\n\r\n'.encode())
-          with open(target_apk, 'rb') as f:
-              body.extend(f.read())
-          body.extend(f'\r\n--{boundary}--\r\n'.encode())
+          if armv7_apk:
+              send_apk(armv7_apk, '🚀 <b>VoidsMood — Khusus Infinix Smart 9 HD (ARMv7 32-bit)</b>', 'Dioptimasi khusus untuk arsitektur armeabi-v7a Infinix Smart 9 HD')
 
-          req = urllib.request.Request(
-              f'https://api.telegram.org/bot{BOT_TOKEN}/sendDocument',
-              data=bytes(body),
-              headers={'Content-Type': f'multipart/form-data; boundary={boundary}'}
-          )
-          with urllib.request.urlopen(req, timeout=120) as resp:
-              print('APK successfully sent to Telegram:', resp.status)
+          if universal_apk:
+              send_apk(universal_apk, '🌐 <b>VoidsMood — Universal Release APK</b>', 'Mendukung semua arsitektur (ARMv7, ARM64, x86, x86_64)')
+
+          if not armv7_apk and not universal_apk:
+              send_apk(apk_files[0], '📦 <b>VoidsMood — Release APK</b>', 'Fallback build')
           "

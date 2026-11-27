@@ -27,8 +27,10 @@ android {
         minSdk = 26
         // DINONAKTIFKAN: targetSdk 35
         // targetSdk = 35
-        // BARU: targetSdk 37
-        targetSdk = 37
+        // DINONAKTIFKAN: targetSdk 37 menyebabkan error 'Aplikasi tidak kompatibel' pada OS Android 14 Go Infinix Smart 9 HD
+        // targetSdk = 37
+        // BARU: targetSdk 34 (Android 14) stabil & kompatibel 100% dengan Infinix Smart 9 HD
+        targetSdk = 34
         versionCode = 1
         versionName = "0.0.1"
 
@@ -50,6 +52,9 @@ android {
 
     signingConfigs {
         create("release") {
+            // BARU: Aktifkan V1 (JAR) dan V2 APK Signature Scheme untuk kompatibilitas penuh Android Go
+            enableV1Signing = true
+            enableV2Signing = true
             if (releaseKeystoreFile.exists()) {
                 storeFile = releaseKeystoreFile
                 storePassword = System.getenv("STORE_PASSWORD") ?: "voidsmood123"
