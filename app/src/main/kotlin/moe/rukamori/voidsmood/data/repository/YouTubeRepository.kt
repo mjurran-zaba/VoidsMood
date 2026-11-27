@@ -229,7 +229,7 @@ object YouTubeRepository {
             val itemsList = mutableListOf<StreamInfoItem>()
             itemsList.addAll(searchInfo.relatedItems.filterIsInstance<StreamInfoItem>())
 
-            if (searchExtractor.hasNextPage() && itemsList.size < 20) {
+            if (searchInfo.hasNextPage() && itemsList.size < 20) {
                 try {
                     val nextPage = searchExtractor.getPage(searchInfo.nextPage)
                     itemsList.addAll(nextPage.items.filterIsInstance<StreamInfoItem>())
@@ -336,7 +336,7 @@ object YouTubeRepository {
             streamItems.addAll(searchInfo.relatedItems.filterIsInstance<StreamInfoItem>())
 
             // Ambil halaman kedua untuk memastikan daftar terisi minimal 20-30 thumbnails
-            if (searchExtractor.hasNextPage() && streamItems.size < 20) {
+            if (searchInfo.hasNextPage() && streamItems.size < 20) {
                 try {
                     val nextPage = searchExtractor.getPage(searchInfo.nextPage)
                     streamItems.addAll(nextPage.items.filterIsInstance<StreamInfoItem>())
