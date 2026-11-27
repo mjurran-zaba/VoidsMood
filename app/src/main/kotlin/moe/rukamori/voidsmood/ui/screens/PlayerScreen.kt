@@ -268,6 +268,15 @@ fun PlayerScreen(
             exoPlayer.playbackState == Player.STATE_BUFFERING
         )
     }
+
+    // BARU: Lacak apakah frame pertama video sudah berhasil tampil di layar
+    var hasRenderedFirstFrame by remember(video.id) {
+        mutableStateOf(
+            exoPlayer.currentMediaItem?.mediaId == video.id &&
+            exoPlayer.playbackState != Player.STATE_IDLE &&
+            exoPlayer.playbackState != Player.STATE_BUFFERING
+        )
+    }
     var playbackError by remember { mutableStateOf<String?>(null) }
 
     // State kontrol Fullscreen & Mode Landscape
@@ -402,6 +411,10 @@ fun PlayerScreen(
 
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
+            override fun onRenderedFirstFrame() {
+                hasRenderedFirstFrame = true
+            }
+
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
                 if (playing) {
@@ -416,6 +429,7 @@ fun PlayerScreen(
                     }
                     Player.STATE_READY -> {
                         isBuffering = false
+                        hasRenderedFirstFrame = true
                         playbackError = null
                         duration = exoPlayer.duration.coerceAtLeast(0L)
                     }
@@ -520,10 +534,12 @@ fun PlayerScreen(
                 exoPlayer.playbackState != Player.STATE_IDLE
             if (isSameMediaActive) {
                 isBuffering = exoPlayer.playbackState == Player.STATE_BUFFERING
+                hasRenderedFirstFrame = true
                 playbackError = null
                 return@LaunchedEffect
             }
 
+            hasRenderedFirstFrame = false
             playbackError = null
             isBuffering = true
 
@@ -731,8 +747,33 @@ fun PlayerScreen(
                 modifier = Modifier.fillMaxSize()
             )
 
-            // Tampilkan thumbnail poster saat buffering awal atau loading
-            if (isBuffering || uiState is PlayerUiState.Loading) {
+            // DINONAKTIFKAN: Thumbnail poster muncul kembali setiap kali isBuffering bernilai true sehingga menutupi video saat sinyal lelet di tengah jalan
+            // if (isBuffering || uiState is PlayerUiState.Loading) {
+            //     AsyncImage(
+            //         model = currentVideo.thumbnailUrl,
+            //         contentDescription = currentVideo.title,
+            //         contentScale = ContentScale.Crop,
+            //         modifier = Modifier.fillMaxSize()
+            //     )
+            //     Box(
+            //         modifier = Modifier
+            //             .fillMaxSize()
+            //             .background(Color.Black.copy(alpha = 0.45f)),
+            //         contentAlignment = Alignment.Center
+            //     ) {
+            //         CircularProgressIndicator(
+            //             color = PolarCyan,
+            //             strokeWidth = 3.dp,
+            //             modifier = Modifier.size(44.dp)
+            //         )
+            //     }
+            // }
+
+            // BARU: UI Buffering YouTube Style (Plek Ketiplek):
+            // 1. Thumbnail poster HANYA tampil saat awal memuat sebelum frame pertama berhasil dirender.
+            // 2. Saat buffering di tengah pemutaran (hasRenderedFirstFrame == true), frame video terakhir tetap membeku (frozen),
+            //    dan hanya menampilkan spinner loading minimalis berputar di tengah layar tanpa menutupi video dengan thumbnail.
+            if (!hasRenderedFirstFrame && (isBuffering || uiState is PlayerUiState.Loading)) {
                 AsyncImage(
                     model = currentVideo.thumbnailUrl,
                     contentDescription = currentVideo.title,
@@ -743,6 +784,18 @@ fun PlayerScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(Color.Black.copy(alpha = 0.45f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        color = PolarCyan,
+                        strokeWidth = 3.dp,
+                        modifier = Modifier.size(44.dp)
+                    )
+                }
+            } else if (hasRenderedFirstFrame && isBuffering && !areControlsVisible) {
+                // Saat kontrol disembunyikan dan sedang buffering di tengah jalan, tampilkan spinner di tengah frame yang membeku
+                Box(
+                    modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator(
@@ -892,7 +945,37 @@ fun PlayerScreen(
                             )
                         }
 
-                        // Play / Pause Circle
+                        // DINONAKTIFKAN: Tombol tengah hanya menampilkan ikon Play atau Pause meskipun sedang buffering
+                        // Box(
+                        //     modifier = Modifier
+                        //         .size(60.dp)
+                        //         .clip(CircleShape)
+                        //         .background(Color.Black.copy(alpha = 0.55f))
+                        //         .clickable {
+                        //             lastInteractionTime = System.currentTimeMillis()
+                        //             if (exoPlayer.isPlaying) {
+                        //                 exoPlayer.pause()
+                        //             } else {
+                        //                 exoPlayer.play()
+                        //             }
+                        //         },
+                        //     contentAlignment = Alignment.Center
+                        // ) {
+                        //     if (isPlaying) {
+                        //         LucidePause(
+                        //             tint = IceWhite,
+                        //             size = 28.dp
+                        //         )
+                        //     } else {
+                        //         LucidePlay(
+                        //             tint = IceWhite,
+                        //             size = 28.dp
+                        //         )
+                        //     }
+                        // }
+
+                        // BARU: Tombol tengah cerdas YouTube Style (Plek Ketiplek):
+                        // Jika video sedang buffering, tombol tengah menampilkan animasi CircularProgressIndicator
                         Box(
                             modifier = Modifier
                                 .size(60.dp)
@@ -900,15 +983,25 @@ fun PlayerScreen(
                                 .background(Color.Black.copy(alpha = 0.55f))
                                 .clickable {
                                     lastInteractionTime = System.currentTimeMillis()
-                                    if (exoPlayer.isPlaying) {
-                                        exoPlayer.pause()
+                                    if (isBuffering) {
+                                        if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
                                     } else {
-                                        exoPlayer.play()
+                                        if (exoPlayer.isPlaying) {
+                                            exoPlayer.pause()
+                                        } else {
+                                            exoPlayer.play()
+                                        }
                                     }
                                 },
                             contentAlignment = Alignment.Center
                         ) {
-                            if (isPlaying) {
+                            if (isBuffering) {
+                                CircularProgressIndicator(
+                                    color = PolarCyan,
+                                    strokeWidth = 3.dp,
+                                    modifier = Modifier.size(30.dp)
+                                )
+                            } else if (isPlaying) {
                                 LucidePause(
                                     tint = IceWhite,
                                     size = 28.dp

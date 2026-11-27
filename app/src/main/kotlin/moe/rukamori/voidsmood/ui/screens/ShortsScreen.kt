@@ -330,6 +330,34 @@ private fun ShortsPlayerPage(
     var showPlayPauseIndicator by remember { mutableStateOf(false) }
     var isLiked by remember(video.id) { mutableStateOf(LocalLibraryRepository.isLiked(video.id)) }
 
+    // BARU: Lacak apakah frame pertama video Short sudah berhasil dirender
+    var hasRenderedFirstFrame by remember(video.id) {
+        mutableStateOf(
+            exoPlayer.currentMediaItem?.mediaId == video.id &&
+            exoPlayer.playbackState != Player.STATE_IDLE &&
+            exoPlayer.playbackState != Player.STATE_BUFFERING
+        )
+    }
+
+    DisposableEffect(exoPlayer, video.id, isActive) {
+        val listener = object : Player.Listener {
+            override fun onRenderedFirstFrame() {
+                if (isActive) {
+                    hasRenderedFirstFrame = true
+                }
+            }
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == Player.STATE_READY && isActive) {
+                    hasRenderedFirstFrame = true
+                }
+            }
+        }
+        exoPlayer.addListener(listener)
+        onDispose {
+            exoPlayer.removeListener(listener)
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -366,14 +394,41 @@ private fun ShortsPlayerPage(
             )
         }
 
-        // Thumbnail Poster saat buffering atau pada halaman offscreen
-        if (isBuffering || !isActive) {
+        // DINONAKTIFKAN: Thumbnail poster muncul kembali setiap kali isBuffering bernilai true saat menonton Shorts
+        // if (isBuffering || !isActive) {
+        //     AsyncImage(
+        //         model = video.thumbnailUrl,
+        //         contentDescription = video.title,
+        //         contentScale = ContentScale.Crop,
+        //         modifier = Modifier.fillMaxSize()
+        //     )
+        // }
+
+        // BARU: UI Buffering YouTube Shorts Style:
+        // 1. Thumbnail poster HANYA tampil untuk halaman offscreen (!isActive) ATAU sebelum frame pertama dirender.
+        // 2. Saat buffering di tengah pemutaran Short (hasRenderedFirstFrame == true), frame video membeku dan
+        //    hanya menampilkan spinner loading di tengah tanpa menutupi layar dengan poster thumbnail.
+        if (!isActive || (!hasRenderedFirstFrame && isBuffering)) {
             AsyncImage(
                 model = video.thumbnailUrl,
                 contentDescription = video.title,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
+        }
+
+        // Mid-stream Buffering Spinner di tengah layar Shorts (YouTube Style)
+        if (isActive && isBuffering) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(
+                    color = PolarCyan,
+                    strokeWidth = 3.dp,
+                    modifier = Modifier.size(44.dp)
+                )
+            }
         }
 
         // Vignette gradasi bayangan atas dan bawah untuk keterbacaan teks
