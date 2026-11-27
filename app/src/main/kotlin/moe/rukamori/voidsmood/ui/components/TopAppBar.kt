@@ -135,7 +135,7 @@ fun SearchTopAppBar(
                     .background(Color(0xFF1E222D))
                     .clickable(onClick = onSearchClick)
                     .padding(horizontal = 14.dp),
-                verticalAlignment = Alignment.CenterVertically
+                contentAlignment = Alignment.CenterStart
             ) {
                 Text(
                     text = query,
