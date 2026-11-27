@@ -39,7 +39,7 @@ import kotlinx.coroutines.launch
 import moe.rukamori.voidsmood.data.model.VideoItem
 import moe.rukamori.voidsmood.data.repository.YouTubeRepository
 import moe.rukamori.voidsmood.ui.components.VideoCard
-import moe.rukamori.voidsmood.ui.theme.CardSurface
+import moe.rukamori.voidsmood.ui.theme.DarkSurfaceVariant
 import moe.rukamori.voidsmood.ui.theme.IceWhite
 import moe.rukamori.voidsmood.ui.theme.PolarCyan
 import moe.rukamori.voidsmood.ui.theme.PureBlack
@@ -101,7 +101,7 @@ fun ExploreScreen(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(20.dp))
-                        .background(if (isSelected) IceWhite else CardSurface)
+                        .background(if (isSelected) IceWhite else DarkSurfaceVariant)
                         .clickable { loadCategory(category) }
                         .padding(horizontal = 16.dp, vertical = 7.dp)
                 ) {
@@ -176,7 +176,7 @@ fun ExploreScreen(
                 ) { video ->
                     VideoCard(
                         video = video,
-                        onClick = { onVideoClick(video) }
+                        onVideoClick = onVideoClick
                     )
                 }
 

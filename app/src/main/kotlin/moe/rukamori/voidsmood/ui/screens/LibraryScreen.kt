@@ -39,7 +39,7 @@ import moe.rukamori.voidsmood.data.repository.LocalLibraryRepository
 import moe.rukamori.voidsmood.ui.components.LucideHistory
 import moe.rukamori.voidsmood.ui.components.LucideLibrary
 import moe.rukamori.voidsmood.ui.components.LucideThumbsUp
-import moe.rukamori.voidsmood.ui.theme.CardSurface
+import moe.rukamori.voidsmood.ui.theme.DarkSurfaceVariant
 import moe.rukamori.voidsmood.ui.theme.IceWhite
 import moe.rukamori.voidsmood.ui.theme.PolarCyan
 import moe.rukamori.voidsmood.ui.theme.PureBlack
@@ -108,7 +108,7 @@ fun LibraryScreen(
                                 .fillMaxWidth()
                                 .padding(horizontal = 18.dp)
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(CardSurface)
+                                .background(DarkSurfaceVariant)
                                 .padding(20.dp),
                             contentAlignment = Alignment.Center
                         ) {
@@ -136,7 +136,7 @@ fun LibraryScreen(
                                             .fillMaxWidth()
                                             .aspectRatio(16f / 9f)
                                             .clip(RoundedCornerShape(8.dp))
-                                            .background(CardSurface)
+                                            .background(DarkSurfaceVariant)
                                     ) {
                                         AsyncImage(
                                             model = video.thumbnailUrl,
@@ -212,7 +212,7 @@ fun LibraryScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .background(CardSurface)
+                            .background(DarkSurfaceVariant)
                             .clickable {
                                 // Buka video pertama yang disukai jika ada
                                 likedList.firstOrNull()?.let { onVideoClick(it) }
@@ -253,7 +253,7 @@ fun LibraryScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .background(CardSurface)
+                            .background(DarkSurfaceVariant)
                             .clickable {
                                 watchLaterList.firstOrNull()?.let { onVideoClick(it) }
                             }
