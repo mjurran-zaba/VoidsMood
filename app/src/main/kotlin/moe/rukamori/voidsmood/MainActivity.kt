@@ -6,6 +6,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -33,7 +40,7 @@ import moe.rukamori.voidsmood.ui.components.NavigationTab
 import moe.rukamori.voidsmood.ui.components.VoidsTopAppBar
 import moe.rukamori.voidsmood.ui.screens.HomeScreen
 import moe.rukamori.voidsmood.ui.screens.PlayerScreen
-import moe.rukamori.voidsmood.ui.theme.IceWhite
+import moe.rukamori.voidsmood.ui.screens.SearchScreen
 import moe.rukamori.voidsmood.ui.theme.PureBlack
 import moe.rukamori.voidsmood.ui.theme.TextMuted
 import moe.rukamori.voidsmood.ui.theme.VoidsMoodTheme
@@ -56,6 +63,9 @@ class MainActivity : ComponentActivity() {
                 var currentTab by remember { mutableStateOf(NavigationTab.HOME) }
                 var activeVideo by remember { mutableStateOf<VideoItem?>(null) }
 
+                // BARU: State kontrol kemunculan layer pencarian penuh dengan animasi slide-to-left
+                var isSearchActive by remember { mutableStateOf(false) }
+
                 if (activeVideo != null) {
                     PlayerScreen(
                         video = activeVideo!!,
@@ -69,103 +79,127 @@ class MainActivity : ComponentActivity() {
                         }
                     )
                 } else {
-                    // DINONAKTIFKAN: Konten drawer navigasi lama (VoidsDrawerContent)
-                    // drawerContent = { VoidsDrawerContent(...) }
-                    // BARU: Drawer kosong murni sesuai instruksi user ("di drawer kosong aja")
-                    ModalNavigationDrawer(
-                        drawerState = drawerState,
-                        scrimColor = Color.Black.copy(alpha = 0.50f),
-                        drawerContent = {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth(0.70f)
-                                    .fillMaxHeight()
-                                    .background(PureBlack)
-                            )
-                        }
-                    ) {
-                        Scaffold(
-                            modifier = Modifier.fillMaxSize(),
-                            containerColor = Color.Transparent,
-                            topBar = {
-                                VoidsTopAppBar(
-                                    onMenuClick = {
-                                        scope.launch {
-                                            if (drawerState.isClosed) drawerState.open() else drawerState.close()
-                                        }
-                                    },
-                                    onSearch = { query ->
-                                        currentTab = NavigationTab.HOME
-                                        homeViewModel.search(query)
-                                    }
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        // DINONAKTIFKAN: Konten drawer navigasi lama (VoidsDrawerContent)
+                        // drawerContent = { VoidsDrawerContent(...) }
+                        // BARU: Drawer kosong murni sesuai instruksi user ("di drawer kosong aja")
+                        ModalNavigationDrawer(
+                            drawerState = drawerState,
+                            scrimColor = Color.Black.copy(alpha = 0.50f),
+                            drawerContent = {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth(0.70f)
+                                        .fillMaxHeight()
+                                        .background(PureBlack)
                                 )
                             }
-                        ) { innerPadding ->
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(innerPadding)
-                            ) {
-                                // Tampilan Konten Berdasarkan 4 Tab Navigasi
-                                when (currentTab) {
-                                    NavigationTab.HOME -> {
-                                        HomeScreen(
-                                            viewModel = homeViewModel,
-                                            onVideoClick = { video ->
-                                                activeVideo = video
+                        ) {
+                            Scaffold(
+                                modifier = Modifier.fillMaxSize(),
+                                containerColor = Color.Transparent,
+                                topBar = {
+                                    VoidsTopAppBar(
+                                        onMenuClick = {
+                                            scope.launch {
+                                                if (drawerState.isClosed) drawerState.open() else drawerState.close()
                                             }
-                                        )
-                                    }
-                                    NavigationTab.EXPLORE -> {
-                                        Box(
-                                            modifier = Modifier.fillMaxSize(),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = "Eksplorasi Kategori (Segera Hadir)",
-                                                color = TextMuted,
-                                                fontSize = 15.sp
-                                            )
+                                        },
+                                        onSearchClick = {
+                                            isSearchActive = true
                                         }
-                                    }
-                                    NavigationTab.SUBSCRIPTIONS -> {
-                                        Box(
-                                            modifier = Modifier.fillMaxSize(),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = "Langganan Lokal (Segera Hadir)",
-                                                color = TextMuted,
-                                                fontSize = 15.sp
-                                            )
-                                        }
-                                    }
-                                    NavigationTab.LIBRARY -> {
-                                        Box(
-                                            modifier = Modifier.fillMaxSize(),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = "Pustaka & Riwayat (Segera Hadir)",
-                                                color = TextMuted,
-                                                fontSize = 15.sp
-                                            )
-                                        }
-                                    }
+                                    )
                                 }
-
-                                // BARU: Floating Apple-Style Capsule Navigation Toolbar (4 Tab)
-                                AppleBottomNavigationBar(
-                                    currentTab = currentTab,
-                                    onTabSelected = { tab ->
-                                        currentTab = tab
-                                        if (tab == NavigationTab.HOME) {
-                                            homeViewModel.loadTrending()
+                            ) { innerPadding ->
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(innerPadding)
+                                ) {
+                                    // Tampilan Konten Berdasarkan 4 Tab Navigasi
+                                    when (currentTab) {
+                                        NavigationTab.HOME -> {
+                                            HomeScreen(
+                                                viewModel = homeViewModel,
+                                                onVideoClick = { video ->
+                                                    activeVideo = video
+                                                }
+                                            )
                                         }
-                                    },
-                                    modifier = Modifier.align(Alignment.BottomCenter)
-                                )
+                                        NavigationTab.EXPLORE -> {
+                                            Box(
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = "Eksplorasi Kategori (Segera Hadir)",
+                                                    color = TextMuted,
+                                                    fontSize = 15.sp
+                                                )
+                                            }
+                                        }
+                                        NavigationTab.SUBSCRIPTIONS -> {
+                                            Box(
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = "Langganan Lokal (Segera Hadir)",
+                                                    color = TextMuted,
+                                                    fontSize = 15.sp
+                                                )
+                                            }
+                                        }
+                                        NavigationTab.LIBRARY -> {
+                                            Box(
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = "Pustaka & Riwayat (Segera Hadir)",
+                                                    color = TextMuted,
+                                                    fontSize = 15.sp
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    // BARU: Floating Apple-Style Capsule Navigation Toolbar (4 Tab)
+                                    AppleBottomNavigationBar(
+                                        currentTab = currentTab,
+                                        onTabSelected = { tab ->
+                                            currentTab = tab
+                                            if (tab == NavigationTab.HOME) {
+                                                homeViewModel.loadTrending()
+                                            }
+                                        },
+                                        modifier = Modifier.align(Alignment.BottomCenter)
+                                    )
+                                }
                             }
+                        }
+
+                        // BARU: Layer Pencarian Baru yang meluncur mulus dari kanan ke kiri (slide to left)
+                        // Menyediakan live suggestions saat mengetik dan saran pencarian YouTube real-time
+                        AnimatedVisibility(
+                            visible = isSearchActive,
+                            enter = slideInHorizontally(
+                                initialOffsetX = { fullWidth -> fullWidth },
+                                animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing)
+                            ) + fadeIn(animationSpec = tween(200)),
+                            exit = slideOutHorizontally(
+                                targetOffsetX = { fullWidth -> fullWidth },
+                                animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing)
+                            ) + fadeOut(animationSpec = tween(150))
+                        ) {
+                            SearchScreen(
+                                onClose = { isSearchActive = false },
+                                onSearch = { query ->
+                                    isSearchActive = false
+                                    currentTab = NavigationTab.HOME
+                                    homeViewModel.search(query)
+                                }
+                            )
                         }
                     }
                 }

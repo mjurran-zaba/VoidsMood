@@ -6,6 +6,8 @@ import kotlinx.coroutines.withContext
 import moe.rukamori.voidsmood.data.model.VideoItem
 import moe.rukamori.voidsmood.data.model.VideoPlaybackDetails
 import moe.rukamori.voidsmood.data.network.NewPipeDownloader
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.schabi.newpipe.extractor.InfoItem
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
@@ -15,6 +17,8 @@ import org.schabi.newpipe.extractor.localization.Localization
 import org.schabi.newpipe.extractor.search.SearchInfo
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
+import java.net.URLEncoder
+import java.util.concurrent.TimeUnit
 
 object YouTubeRepository {
 
@@ -39,102 +43,114 @@ object YouTubeRepository {
         if (!isInitialized) {
             synchronized(this) {
                 if (!isInitialized) {
-                    val downloader = NewPipeDownloader()
-                    NewPipe.init(
-                        downloader,
-                        Localization("id", "ID"),
-                        ContentCountry("ID")
-                    )
+                    NewPipe.init(NewPipeDownloader.getInstance())
                     isInitialized = true
                 }
             }
         }
     }
 
-    private fun fetchItemsFromSeed(seed: String): List<VideoItem> {
-        val service = ServiceList.YouTube
-        val rawItems: List<Any> = try {
-            if (seed.startsWith("trending_") || seed == "live") {
-                val kioskList = service.kioskList
-                val extractor = kioskList.getExtractorById(seed, null)
-                extractor.fetchPage()
-                val info = KioskInfo.getInfo(extractor)
-                info.relatedItems
-            } else {
-                val searchExtractor = service.getSearchExtractor(seed)
-                searchExtractor.fetchPage()
-                val searchInfo = SearchInfo.getInfo(searchExtractor)
-                searchInfo.relatedItems
-            }
-        } catch (e: Exception) {
-            emptyList()
-        }
-
-        return rawItems
-            .filterIsInstance<StreamInfoItem>()
-            .map { item ->
-                val videoId = item.url.substringAfter("v=").substringBefore("&")
-                val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
-                val avatar = item.uploaderAvatars.firstOrNull()?.url
-                VideoItem(
-                    id = videoId,
-                    url = item.url,
-                    title = item.name ?: "Untitled",
-                    uploaderName = item.uploaderName ?: "Unknown Creator",
-                    uploaderAvatarUrl = avatar,
-                    thumbnailUrl = thumb,
-                    durationSeconds = item.duration,
-                    durationText = VideoItem.formatDuration(item.duration),
-                    viewCount = item.viewCount,
-                    viewCountText = VideoItem.formatViews(item.viewCount),
-                    uploadDateText = item.textualUploadDate ?: ""
-                )
-            }
-    }
-
+    // Mengambil daftar video beranda secara dinamis dengan rotasi seed saat refresh
     suspend fun getTrendingVideos(refresh: Boolean = false): Result<List<VideoItem>> = withContext(Dispatchers.IO) {
         try {
             initIfNeeded()
+
             if (refresh) {
                 currentSeedIndex = (currentSeedIndex + 1) % FEED_SEEDS.size
             }
 
             val seed = FEED_SEEDS[currentSeedIndex]
-            var items = fetchItemsFromSeed(seed)
+            val allVideos = mutableListOf<VideoItem>()
 
-            // Jika seed awal mengembalikan sedikit video, gabungkan dengan seed pendamping
-            if (items.size < 15) {
-                val backupSeed = FEED_SEEDS[(currentSeedIndex + 1) % FEED_SEEDS.size]
-                items = items + fetchItemsFromSeed(backupSeed)
+            // 1. Eksekusi pencarian berdasarkan topik seed aktif untuk mendapatkan konten segar
+            try {
+                val searchInfo = SearchInfo.getInfo(
+                    ServiceList.YouTube,
+                    ServiceList.YouTube.searchQHFactory.fromQuery(seed),
+                    ContentCountry("ID"),
+                    Localization("id", "ID")
+                )
+                val searchItems = searchInfo.relatedItems
+                    .filterIsInstance<StreamInfoItem>()
+                    .map { item ->
+                        val videoId = item.url.substringAfter("v=").substringBefore("&")
+                        val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+                        val avatar = item.uploaderAvatars.firstOrNull()?.url
+                        VideoItem(
+                            id = videoId,
+                            url = item.url,
+                            title = item.name ?: "Untitled",
+                            uploaderName = item.uploaderName ?: "Unknown Creator",
+                            uploaderAvatarUrl = avatar,
+                            thumbnailUrl = thumb,
+                            durationSeconds = item.duration,
+                            durationText = VideoItem.formatDuration(item.duration),
+                            viewCount = item.viewCount,
+                            viewCountText = VideoItem.formatViews(item.viewCount),
+                            uploadDateText = item.textualUploadDate ?: ""
+                        )
+                    }
+                allVideos.addAll(searchItems)
+            } catch (_: Exception) {}
+
+            // 2. Ambil juga feed kiosk Trending bawaan sebagai pengayaan
+            try {
+                val defaultKiosk = ServiceList.YouTube.kioskList.defaultKioskId
+                val kioskInfo = KioskInfo.getInfo(
+                    ServiceList.YouTube,
+                    ServiceList.YouTube.kioskList.getListFor(defaultKiosk).contentFilter[0],
+                    ContentCountry("ID"),
+                    Localization("id", "ID")
+                )
+                val kioskVideos = kioskInfo.relatedItems
+                    .filterIsInstance<StreamInfoItem>()
+                    .map { item ->
+                        val videoId = item.url.substringAfter("v=").substringBefore("&")
+                        val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+                        val avatar = item.uploaderAvatars.firstOrNull()?.url
+                        VideoItem(
+                            id = videoId,
+                            url = item.url,
+                            title = item.name ?: "Untitled",
+                            uploaderName = item.uploaderName ?: "Unknown Creator",
+                            uploaderAvatarUrl = avatar,
+                            thumbnailUrl = thumb,
+                            durationSeconds = item.duration,
+                            durationText = VideoItem.formatDuration(item.duration),
+                            viewCount = item.viewCount,
+                            viewCountText = VideoItem.formatViews(item.viewCount),
+                            uploadDateText = item.textualUploadDate ?: ""
+                        )
+                    }
+                allVideos.addAll(kioskVideos)
+            } catch (_: Exception) {}
+
+            val distinctVideos = allVideos.distinctBy { it.id }
+            if (distinctVideos.isNotEmpty()) {
+                Result.success(distinctVideos)
+            } else {
+                Result.failure(Exception("Tidak dapat memuat video saat ini. Periksa koneksi internet."))
             }
-
-            Result.success(items)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    // BARU: Fungsi pagination infinite scrolling untuk memuat batch video berikutnya saat di-scroll ke bawah
+    // BARU: Fungsi memuat batch video berikutnya secara berkelanjutan (Infinite Scrolling)
     suspend fun loadMoreVideos(pageOffset: Int): Result<List<VideoItem>> = withContext(Dispatchers.IO) {
         try {
             initIfNeeded()
-            val nextSeed = FEED_SEEDS[(currentSeedIndex + pageOffset) % FEED_SEEDS.size]
-            val items = fetchItemsFromSeed(nextSeed)
-            Result.success(items)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
+            val seedIndex = (currentSeedIndex + pageOffset) % FEED_SEEDS.size
+            val nextSeed = FEED_SEEDS[seedIndex]
 
-    suspend fun searchVideos(query: String): Result<List<VideoItem>> = withContext(Dispatchers.IO) {
-        try {
-            initIfNeeded()
-            val service = ServiceList.YouTube
-            val searchExtractor = service.getSearchExtractor(query)
-            searchExtractor.fetchPage()
-            val searchInfo = SearchInfo.getInfo(searchExtractor)
+            val searchInfo = SearchInfo.getInfo(
+                ServiceList.YouTube,
+                ServiceList.YouTube.searchQHFactory.fromQuery(nextSeed),
+                ContentCountry("ID"),
+                Localization("id", "ID")
+            )
 
-            val videoItems = searchInfo.relatedItems
+            val newVideos = searchInfo.relatedItems
                 .filterIsInstance<StreamInfoItem>()
                 .map { item ->
                     val videoId = item.url.substringAfter("v=").substringBefore("&")
@@ -154,10 +170,95 @@ object YouTubeRepository {
                         uploadDateText = item.textualUploadDate ?: ""
                     )
                 }
-            Result.success(videoItems)
+                .distinctBy { it.id }
+
+            Result.success(newVideos)
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    suspend fun searchVideos(query: String): Result<List<VideoItem>> = withContext(Dispatchers.IO) {
+        try {
+            initIfNeeded()
+            val searchInfo = SearchInfo.getInfo(
+                ServiceList.YouTube,
+                ServiceList.YouTube.searchQHFactory.fromQuery(query),
+                ContentCountry("ID"),
+                Localization("id", "ID")
+            )
+
+            val videos = searchInfo.relatedItems
+                .filterIsInstance<StreamInfoItem>()
+                .map { item ->
+                    val videoId = item.url.substringAfter("v=").substringBefore("&")
+                    val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+                    val avatar = item.uploaderAvatars.firstOrNull()?.url
+                    VideoItem(
+                        id = videoId,
+                        url = item.url,
+                        title = item.name ?: "Untitled",
+                        uploaderName = item.uploaderName ?: "Unknown Creator",
+                        uploaderAvatarUrl = avatar,
+                        thumbnailUrl = thumb,
+                        durationSeconds = item.duration,
+                        durationText = VideoItem.formatDuration(item.duration),
+                        viewCount = item.viewCount,
+                        viewCountText = VideoItem.formatViews(item.viewCount),
+                        uploadDateText = item.textualUploadDate ?: ""
+                    )
+                }
+                .distinctBy { it.id }
+
+            Result.success(videos)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // BARU: Ambil saran pencarian real-time dari YouTube (Search Suggestions)
+    suspend fun getSearchSuggestions(query: String): List<String> = withContext(Dispatchers.IO) {
+        if (query.isBlank()) return@withContext emptyList()
+        try {
+            initIfNeeded()
+            val service = ServiceList.YouTube
+            val suggestions = service.suggestionExtractor?.suggestionList(query)
+            if (!suggestions.isNullOrEmpty()) {
+                return@withContext suggestions
+            }
+        } catch (_: Exception) {}
+
+        // Fallback langsung ke endpoint Google YouTube Suggest queries via HTTP
+        try {
+            val encoded = URLEncoder.encode(query, "UTF-8")
+            val url = "https://suggestqueries.google.com/complete/search?client=youtube&jsonp=JP&ds=yt&gl=ID&hl=id&q=$encoded"
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", NewPipeDownloader.DEFAULT_USER_AGENT)
+                .build()
+            val client = OkHttpClient.Builder()
+                .connectTimeout(5, TimeUnit.SECONDS)
+                .readTimeout(5, TimeUnit.SECONDS)
+                .build()
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: ""
+            if (body.startsWith("JP(") && body.endsWith(")")) {
+                val jsonStr = body.substring(3, body.length - 1)
+                val jsonArray = org.json.JSONArray(jsonStr)
+                val collection = jsonArray.getJSONArray(1)
+                val results = mutableListOf<String>()
+                for (i in 0 until collection.length()) {
+                    val item = collection.getJSONArray(i)
+                    val text = item.getString(0)
+                    if (!text.isNullOrBlank()) {
+                        results.add(text)
+                    }
+                }
+                return@withContext results
+            }
+        } catch (_: Exception) {}
+
+        emptyList()
     }
 
     suspend fun getVideoPlaybackDetails(videoIdOrUrl: String): Result<VideoPlaybackDetails> = withContext(Dispatchers.IO) {
@@ -192,6 +293,36 @@ object YouTubeRepository {
             // Ekstraksi HLS Master Playlist (Menyediakan semua resolusi adaptif + audio secara terpadu)
             val rawHls = info.hlsUrl?.takeIf { it.isNotBlank() }
             val cleanHls = rawHls?.removeSuffix("?")
+
+            // BARU: Ekstraksi seluruh pilihan resolusi video yang tersedia beserta URL stream-nya
+            val resMap = mutableMapOf<String, String>()
+            val rawResolutions = mutableListOf<String>()
+
+            info.videoStreams?.forEach { s ->
+                val r = s.resolution?.trim() ?: if (s.height > 0) "${s.height}p" else null
+                if (!r.isNullOrBlank() && !resMap.containsKey(r) && !s.url.isNullOrBlank()) {
+                    resMap[r] = s.url
+                    rawResolutions.add(r)
+                }
+            }
+
+            info.videoOnlyStreams?.forEach { s ->
+                val r = s.resolution?.trim() ?: if (s.height > 0) "${s.height}p" else null
+                if (!r.isNullOrBlank() && !resMap.containsKey(r) && !s.url.isNullOrBlank()) {
+                    resMap[r] = s.url
+                    rawResolutions.add(r)
+                }
+            }
+
+            val sortedRes = rawResolutions.distinct().sortedByDescending { r ->
+                r.replace("p", "").replace("60", "").trim().toIntOrNull() ?: 0
+            }
+
+            val finalResolutions = if (sortedRes.isNotEmpty()) {
+                listOf("Auto") + sortedRes
+            } else {
+                listOf("Auto", "1080p", "720p", "480p", "360p", "240p", "144p")
+            }
 
             // Cari stream video progressive (video + audio muxed) jika tersedia
             val muxedProgressive = info.videoStreams
@@ -248,7 +379,9 @@ object YouTubeRepository {
                 subscriberCountText = if (info.uploaderSubscriberCount > 0) "${VideoItem.formatCount(info.uploaderSubscriberCount)} subscriber" else "",
                 likeCountText = if (info.likeCount > 0) VideoItem.formatCount(info.likeCount) else "Suka",
                 dislikeCountText = if (info.dislikeCount > 0) VideoItem.formatCount(info.dislikeCount) else "",
-                relatedVideos = related
+                relatedVideos = related,
+                availableResolutions = finalResolutions,
+                resolutionStreams = resMap
             )
 
             Result.success(details)

@@ -292,3 +292,120 @@ fun LucideDownload(
         drawLine(tint, Offset(w * 0.20f, h * 0.85f), Offset(w * 0.80f, h * 0.85f), stroke, StrokeCap.Round)
     }
 }
+
+// BARU: Ikon Maximize (Masuk mode Fullscreen / Landscape)
+@Composable
+fun LucideMaximize(
+    modifier: Modifier = Modifier,
+    tint: Color = Color.White,
+    size: Dp = 20.dp,
+    strokeWidth: Dp = 2.dp
+) {
+    Canvas(modifier = modifier.size(size)) {
+        val w = this.size.width
+        val h = this.size.height
+        val stroke = strokeWidth.toPx()
+
+        // Sudut kiri atas
+        drawLine(tint, Offset(w * 0.15f, h * 0.40f), Offset(w * 0.15f, h * 0.15f), stroke, StrokeCap.Round)
+        drawLine(tint, Offset(w * 0.15f, h * 0.15f), Offset(w * 0.40f, h * 0.15f), stroke, StrokeCap.Round)
+
+        // Sudut kanan atas
+        drawLine(tint, Offset(w * 0.60f, h * 0.15f), Offset(w * 0.85f, h * 0.15f), stroke, StrokeCap.Round)
+        drawLine(tint, Offset(w * 0.85f, h * 0.15f), Offset(w * 0.85f, h * 0.40f), stroke, StrokeCap.Round)
+
+        // Sudut kiri bawah
+        drawLine(tint, Offset(w * 0.15f, h * 0.60f), Offset(w * 0.15f, h * 0.85f), stroke, StrokeCap.Round)
+        drawLine(tint, Offset(w * 0.15f, h * 0.85f), Offset(w * 0.40f, h * 0.85f), stroke, StrokeCap.Round)
+
+        // Sudut kanan bawah
+        drawLine(tint, Offset(w * 0.60f, h * 0.85f), Offset(w * 0.85f, h * 0.85f), stroke, StrokeCap.Round)
+        drawLine(tint, Offset(w * 0.85f, h * 0.85f), Offset(w * 0.85f, h * 0.60f), stroke, StrokeCap.Round)
+    }
+}
+
+// BARU: Ikon Minimize (Keluar dari Fullscreen ke Portrait)
+@Composable
+fun LucideMinimize(
+    modifier: Modifier = Modifier,
+    tint: Color = Color.White,
+    size: Dp = 20.dp,
+    strokeWidth: Dp = 2.dp
+) {
+    Canvas(modifier = modifier.size(size)) {
+        val w = this.size.width
+        val h = this.size.height
+        val stroke = strokeWidth.toPx()
+
+        // Sudut kiri atas menghadap ke dalam
+        drawLine(tint, Offset(w * 0.15f, h * 0.35f), Offset(w * 0.35f, h * 0.35f), stroke, StrokeCap.Round)
+        drawLine(tint, Offset(w * 0.35f, h * 0.35f), Offset(w * 0.35f, h * 0.15f), stroke, StrokeCap.Round)
+
+        // Sudut kanan atas menghadap ke dalam
+        drawLine(tint, Offset(w * 0.85f, h * 0.35f), Offset(w * 0.65f, h * 0.35f), stroke, StrokeCap.Round)
+        drawLine(tint, Offset(w * 0.65f, h * 0.35f), Offset(w * 0.65f, h * 0.15f), stroke, StrokeCap.Round)
+
+        // Sudut kiri bawah menghadap ke dalam
+        drawLine(tint, Offset(w * 0.15f, h * 0.65f), Offset(w * 0.35f, h * 0.65f), stroke, StrokeCap.Round)
+        drawLine(tint, Offset(w * 0.35f, h * 0.65f), Offset(w * 0.35f, h * 0.85f), stroke, StrokeCap.Round)
+
+        // Sudut kanan bawah menghadap ke dalam
+        drawLine(tint, Offset(w * 0.85f, h * 0.65f), Offset(w * 0.65f, h * 0.65f), stroke, StrokeCap.Round)
+        drawLine(tint, Offset(w * 0.65f, h * 0.65f), Offset(w * 0.65f, h * 0.85f), stroke, StrokeCap.Round)
+    }
+}
+
+// BARU: Ikon Check (Tanda centang kualitas resolusi aktif)
+@Composable
+fun LucideCheck(
+    modifier: Modifier = Modifier,
+    tint: Color = Color.White,
+    size: Dp = 20.dp,
+    strokeWidth: Dp = 2.dp
+) {
+    Canvas(modifier = modifier.size(size)) {
+        val w = this.size.width
+        val h = this.size.height
+        val stroke = strokeWidth.toPx()
+
+        drawLine(tint, Offset(w * 0.20f, h * 0.52f), Offset(w * 0.42f, h * 0.74f), stroke, StrokeCap.Round)
+        drawLine(tint, Offset(w * 0.42f, h * 0.74f), Offset(w * 0.82f, h * 0.28f), stroke, StrokeCap.Round)
+    }
+}
+
+// BARU: Ikon X (Hapus teks pada input pencarian)
+@Composable
+fun LucideX(
+    modifier: Modifier = Modifier,
+    tint: Color = Color.White,
+    size: Dp = 20.dp,
+    strokeWidth: Dp = 2.dp
+) {
+    Canvas(modifier = modifier.size(size)) {
+        val w = this.size.width
+        val h = this.size.height
+        val stroke = strokeWidth.toPx()
+
+        drawLine(tint, Offset(w * 0.22f, h * 0.22f), Offset(w * 0.78f, h * 0.78f), stroke, StrokeCap.Round)
+        drawLine(tint, Offset(w * 0.78f, h * 0.22f), Offset(w * 0.22f, h * 0.78f), stroke, StrokeCap.Round)
+    }
+}
+
+// BARU: Ikon ArrowUpLeft (Panah diagonal ke kiri atas untuk memasukkan saran pencarian ke search box)
+@Composable
+fun LucideArrowUpLeft(
+    modifier: Modifier = Modifier,
+    tint: Color = Color.White,
+    size: Dp = 20.dp,
+    strokeWidth: Dp = 2.dp
+) {
+    Canvas(modifier = modifier.size(size)) {
+        val w = this.size.width
+        val h = this.size.height
+        val stroke = strokeWidth.toPx()
+
+        drawLine(tint, Offset(w * 0.75f, h * 0.75f), Offset(w * 0.25f, h * 0.25f), stroke, StrokeCap.Round)
+        drawLine(tint, Offset(w * 0.25f, h * 0.55f), Offset(w * 0.25f, h * 0.25f), stroke, StrokeCap.Round)
+        drawLine(tint, Offset(w * 0.25f, h * 0.25f), Offset(w * 0.55f, h * 0.25f), stroke, StrokeCap.Round)
+    }
+}

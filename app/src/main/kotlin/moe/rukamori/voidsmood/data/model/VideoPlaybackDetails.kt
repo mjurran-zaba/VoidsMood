@@ -15,5 +15,8 @@ data class VideoPlaybackDetails(
     val subscriberCountText: String = "",
     val likeCountText: String = "",
     val dislikeCountText: String = "",
-    val relatedVideos: List<VideoItem> = emptyList()
+    val relatedVideos: List<VideoItem> = emptyList(),
+    // BARU: Daftar resolusi yang tersedia dan pemetaan URL resolusi ke stream untuk kontrol kualitas
+    val availableResolutions: List<String> = emptyList(),
+    val resolutionStreams: Map<String, String> = emptyMap()
 )
