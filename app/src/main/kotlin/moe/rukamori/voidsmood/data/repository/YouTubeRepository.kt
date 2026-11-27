@@ -135,17 +135,29 @@ object YouTubeRepository {
                 uploadDateText = info.textualUploadDate ?: ""
             )
 
-            // Prioritaskan stream progressive muxed (video + audio dalam satu kontainer) untuk efisiensi hardware Android
-            val progressiveStream = info.videoStreams
+            // Ekstraksi HLS Master Playlist (Menyediakan semua resolusi adaptif + audio secara terpadu)
+            val rawHls = info.hlsUrl?.takeIf { it.isNotBlank() }
+            val cleanHls = rawHls?.removeSuffix("?")
+
+            // Cari stream video progressive (video + audio muxed) jika tersedia
+            val muxedProgressive = info.videoStreams
                 ?.filter { !it.isVideoOnly }
                 ?.maxByOrNull { it.height }
-                ?: info.videoStreams?.firstOrNull()
 
-            val streamUrl = progressiveStream?.url
-                ?: info.dashMpdUrl
-                ?: info.hlsUrl
-                ?: info.videoOnlyStreams?.firstOrNull()?.url
-                ?: throw IllegalStateException("Tidak dapat menemukan stream URL yang valid untuk video ini.")
+            // Cari video-only stream terbaik (720p atau 480p ideal untuk hardware ARMv7 Infinix)
+            val videoOnlyStream = info.videoOnlyStreams
+                ?.firstOrNull { it.resolution == "720p" }
+                ?: info.videoOnlyStreams?.firstOrNull { it.resolution == "480p" }
+                ?: info.videoOnlyStreams?.firstOrNull { it.resolution == "360p" }
+                ?: info.videoOnlyStreams?.firstOrNull()
+
+            val selectedVideoUrl = muxedProgressive?.url ?: videoOnlyStream?.url
+
+            // Cari stream audio dengan bitrate optimal
+            val selectedAudioUrl = info.audioStreams
+                ?.maxByOrNull { it.averageBitrate }
+                ?.url
+                ?: info.audioStreams?.firstOrNull()?.url
 
             val related = info.relatedItems
                 .filterIsInstance<StreamInfoItem>()
@@ -170,7 +182,10 @@ object YouTubeRepository {
 
             val details = VideoPlaybackDetails(
                 video = baseVideo,
-                streamUrl = streamUrl,
+                hlsUrl = cleanHls,
+                videoUrl = selectedVideoUrl,
+                audioUrl = selectedAudioUrl,
+                isProgressiveMuxed = (muxedProgressive != null),
                 isLive = !info.hlsUrl.isNullOrBlank(),
                 description = info.description?.content ?: "",
                 subscriberCountText = if (info.uploaderSubscriberCount > 0) "${VideoItem.formatCount(info.uploaderSubscriberCount)} subscriber" else "",

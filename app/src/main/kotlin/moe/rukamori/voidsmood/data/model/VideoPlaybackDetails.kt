@@ -6,7 +6,10 @@ import androidx.compose.runtime.Immutable
 @Immutable
 data class VideoPlaybackDetails(
     val video: VideoItem,
-    val streamUrl: String,
+    val hlsUrl: String? = null,
+    val videoUrl: String? = null,
+    val audioUrl: String? = null,
+    val isProgressiveMuxed: Boolean = false,
     val isLive: Boolean = false,
     val description: String = "",
     val subscriberCountText: String = "",

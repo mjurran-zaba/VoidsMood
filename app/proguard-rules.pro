@@ -58,4 +58,6 @@
 # AndroidX Media3 ExoPlayer
 -keep class androidx.media3.ui.** { *; }
 -keep class androidx.media3.exoplayer.** { *; }
+-keep class androidx.media3.common.** { *; }
+-keep class androidx.media3.datasource.** { *; }
 -dontwarn androidx.media3.**

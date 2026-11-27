@@ -43,15 +43,21 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.exoplayer.source.MergingMediaSource
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.PlayerView
 import coil3.compose.AsyncImage
 import moe.rukamori.voidsmood.data.model.VideoItem
@@ -62,9 +68,7 @@ import moe.rukamori.voidsmood.ui.components.LucideDownload
 import moe.rukamori.voidsmood.ui.components.LucideShare2
 import moe.rukamori.voidsmood.ui.components.LucideThumbsUp
 import moe.rukamori.voidsmood.ui.components.VideoCard
-import moe.rukamori.voidsmood.ui.theme.DarkSurface
 import moe.rukamori.voidsmood.ui.theme.GlassBorder
-import moe.rukamori.voidsmood.ui.theme.GlassSurface
 import moe.rukamori.voidsmood.ui.theme.IceWhite
 import moe.rukamori.voidsmood.ui.theme.PolarCyan
 import moe.rukamori.voidsmood.ui.theme.PureBlack
@@ -84,38 +88,124 @@ fun PlayerScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
-    // Tangani gesture/tombol back sistem Android untuk kembali ke feed
+    var isBuffering by remember { mutableStateOf(true) }
+    var playbackError by remember { mutableStateOf<String?>(null) }
+
+    // Tangani gesture / tombol back sistem Android
     BackHandler(onBack = onBack)
 
     LaunchedEffect(video.id) {
         viewModel.loadVideo(video)
     }
 
-    // Media3 ExoPlayer instance dengan Lifecycle DisposableEffect
-    val exoPlayer = remember(context) {
-        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+    // Factory HTTP DataSource dengan User-Agent & Referer YouTube resmi anti-403
+    val httpDataSourceFactory = remember {
+        DefaultHttpDataSource.Factory()
             .setUserAgent(NewPipeDownloader.DEFAULT_USER_AGENT)
             .setAllowCrossProtocolRedirects(true)
             .setConnectTimeoutMs(15000)
             .setReadTimeoutMs(20000)
+            .setDefaultRequestProperties(
+                mapOf(
+                    "Referer" to "https://www.youtube.com/",
+                    "Origin" to "https://www.youtube.com"
+                )
+            )
+    }
 
-        val mediaSourceFactory = DefaultMediaSourceFactory(context)
-            .setDataSourceFactory(httpDataSourceFactory)
-
-        ExoPlayer.Builder(context)
-            .setMediaSourceFactory(mediaSourceFactory)
-            .build()
-            .apply {
-                playWhenReady = true
-            }
+    // ExoPlayer Lifecycle instance dengan Listener Error & Buffering
+    val exoPlayer = remember(context) {
+        ExoPlayer.Builder(context).build().apply {
+            playWhenReady = true
+        }
     }
 
     DisposableEffect(exoPlayer) {
+        val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                when (playbackState) {
+                    Player.STATE_BUFFERING -> {
+                        isBuffering = true
+                    }
+                    Player.STATE_READY -> {
+                        isBuffering = false
+                        playbackError = null
+                    }
+                    Player.STATE_ENDED -> {
+                        isBuffering = false
+                    }
+                    Player.STATE_IDLE -> {}
+                }
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                isBuffering = false
+                playbackError = error.message ?: "Koneksi video terputus. Ketuk untuk mencoba lagi."
+            }
+        }
+        exoPlayer.addListener(listener)
         onDispose {
+            exoPlayer.removeListener(listener)
             exoPlayer.stop()
             exoPlayer.release()
         }
     }
+
+    // Eksekusi pemutaran saat detail stream berhasil diekstrak
+    val successDetails = (uiState as? PlayerUiState.Success)?.details
+    LaunchedEffect(successDetails) {
+        if (successDetails != null) {
+            playbackError = null
+            isBuffering = true
+
+            // Konstruksi MediaSource berlapis (HLS Master -> Progressive Muxed -> Merged Video+Audio)
+            val mediaSource: MediaSource? = try {
+                when {
+                    // 1. Jalur Utama: HLS Adaptive Master Playlist (Audio + Video terpadu semua resolusi)
+                    !successDetails.hlsUrl.isNullOrBlank() -> {
+                        val uri = successDetails.hlsUrl.removeSuffix("?")
+                        HlsMediaSource.Factory(httpDataSourceFactory)
+                            .createMediaSource(MediaItem.fromUri(uri))
+                    }
+                    // 2. Jalur Muxed Progressive (Jika YouTube menyajikan MP4 gabungan)
+                    successDetails.isProgressiveMuxed && !successDetails.videoUrl.isNullOrBlank() -> {
+                        ProgressiveMediaSource.Factory(httpDataSourceFactory)
+                            .createMediaSource(MediaItem.fromUri(successDetails.videoUrl))
+                    }
+                    // 3. Jalur Merging MediaSource (Gabungkan Video 720p + Audio Opus/M4A)
+                    !successDetails.videoUrl.isNullOrBlank() && !successDetails.audioUrl.isNullOrBlank() -> {
+                        val vSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
+                            .createMediaSource(MediaItem.fromUri(successDetails.videoUrl))
+                        val aSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
+                            .createMediaSource(MediaItem.fromUri(successDetails.audioUrl))
+                        MergingMediaSource(vSource, aSource)
+                    }
+                    // 4. Fallback ke URL video yang ada
+                    !successDetails.videoUrl.isNullOrBlank() -> {
+                        ProgressiveMediaSource.Factory(httpDataSourceFactory)
+                            .createMediaSource(MediaItem.fromUri(successDetails.videoUrl))
+                    }
+                    else -> null
+                }
+            } catch (e: Exception) {
+                playbackError = e.localizedMessage ?: "Gagal memproses stream video."
+                null
+            }
+
+            if (mediaSource != null) {
+                exoPlayer.stop()
+                exoPlayer.clearMediaItems()
+                exoPlayer.setMediaSource(mediaSource)
+                exoPlayer.prepare()
+                exoPlayer.play()
+            } else if (playbackError == null) {
+                playbackError = "Tidak ada stream pemutaran yang kompatibel."
+                isBuffering = false
+            }
+        }
+    }
+
+    val currentVideo = successDetails?.video ?: video
 
     Column(
         modifier = modifier
@@ -129,108 +219,94 @@ fun PlayerScreen(
                 .aspectRatio(16f / 9f)
                 .background(Color.Black)
         ) {
-            when (val state = uiState) {
-                is PlayerUiState.Success -> {
-                    LaunchedEffect(state.details.streamUrl) {
-                        exoPlayer.stop()
-                        exoPlayer.clearMediaItems()
-                        val mediaItem = MediaItem.fromUri(state.details.streamUrl)
-                        exoPlayer.setMediaItem(mediaItem)
-                        exoPlayer.prepare()
-                        exoPlayer.play()
-                    }
-
-                    AndroidView(
-                        factory = { ctx ->
-                            PlayerView(ctx).apply {
-                                player = exoPlayer
-                                useController = true
-                                setShowNextButton(false)
-                                setShowPreviousButton(false)
-                                layoutParams = ViewGroup.LayoutParams(
-                                    ViewGroup.LayoutParams.MATCH_PARENT,
-                                    ViewGroup.LayoutParams.MATCH_PARENT
-                                )
-                            }
-                        },
-                        update = { playerView ->
-                            playerView.player = exoPlayer
-                        },
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-
-                is PlayerUiState.Loading -> {
-                    // Tampilkan thumbnail langsung agar layar tidak pernah blank
-                    AsyncImage(
-                        model = state.video.thumbnailUrl,
-                        contentDescription = state.video.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.45f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(
-                            color = PolarCyan,
-                            strokeWidth = 3.dp,
-                            modifier = Modifier.size(42.dp)
+            // PlayerView selalu terpasang untuk menjaga Surface hardware decoding tetap siap
+            AndroidView(
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        player = exoPlayer
+                        useController = true
+                        setShowNextButton(false)
+                        setShowPreviousButton(false)
+                        setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
+                        setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        keepScreenOn = true
+                        layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
                         )
                     }
-                }
+                },
+                update = { playerView ->
+                    playerView.player = exoPlayer
+                },
+                modifier = Modifier.fillMaxSize()
+            )
 
-                is PlayerUiState.Error -> {
-                    AsyncImage(
-                        model = state.video.thumbnailUrl,
-                        contentDescription = state.video.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.70f))
-                            .padding(16.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = state.message,
-                                color = IceWhite,
-                                fontSize = 13.sp,
-                                modifier = Modifier.padding(bottom = 12.dp)
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(20.dp))
-                                    .background(PolarCyan)
-                                    .clickable { viewModel.loadVideo(state.video) }
-                                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                            ) {
-                                Text(
-                                    text = "Coba Lagi",
-                                    color = PureBlack,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-                    }
-                }
-
-                PlayerUiState.Idle -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black)
+            // Tampilkan thumbnail poster saat buffering awal atau loading
+            if (isBuffering || uiState is PlayerUiState.Loading) {
+                AsyncImage(
+                    model = currentVideo.thumbnailUrl,
+                    contentDescription = currentVideo.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.45f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        color = PolarCyan,
+                        strokeWidth = 3.dp,
+                        modifier = Modifier.size(44.dp)
                     )
                 }
             }
 
-            // Tombol Back di Pojok Kiri Atas Player (YouTube Style)
+            // Tampilan Error jika pemutaran terkendala
+            if (playbackError != null || uiState is PlayerUiState.Error) {
+                val errorMsg = playbackError
+                    ?: (uiState as? PlayerUiState.Error)?.message
+                    ?: "Koneksi video gagal."
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.85f))
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = errorMsg,
+                            color = IceWhite,
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(PolarCyan)
+                                .clickable {
+                                    playbackError = null
+                                    viewModel.loadVideo(currentVideo)
+                                }
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            Text(
+                                text = "Coba Lagi",
+                                color = PureBlack,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Tombol Back di Pojok Kiri Atas Player
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
@@ -249,9 +325,6 @@ fun PlayerScreen(
         }
 
         // AREA 2: Video Metadata & Daftar Video Terkait (YouTube Mobile Layout)
-        val details = (uiState as? PlayerUiState.Success)?.details
-        val currentVideo = details?.video ?: video
-
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -288,7 +361,7 @@ fun PlayerScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Baris Channel (Avatar + Nama + Subs + Tombol Subscribe Putih YouTube)
+                // Baris Channel (Avatar + Nama + Subs + Tombol Subscribe Putih)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -330,16 +403,16 @@ fun PlayerScreen(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        if (details?.subscriberCountText?.isNotEmpty() == true) {
+                        if (successDetails?.subscriberCountText?.isNotEmpty() == true) {
                             Text(
-                                text = details.subscriberCountText,
+                                text = successDetails.subscriberCountText,
                                 color = TextMuted,
                                 fontSize = 11.sp
                             )
                         }
                     }
 
-                    // Tombol Subscribe (Gaya YouTube: Pill Putih Text Hitam)
+                    // Tombol Subscribe (Pill Putih khas YouTube)
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(20.dp))
@@ -378,7 +451,7 @@ fun PlayerScreen(
                     ) {
                         LucideThumbsUp(tint = IceWhite, size = 16.dp)
                         Text(
-                            text = details?.likeCountText ?: "Suka",
+                            text = successDetails?.likeCountText ?: "Suka",
                             color = IceWhite,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium
@@ -425,7 +498,7 @@ fun PlayerScreen(
                 Spacer(modifier = Modifier.height(14.dp))
 
                 // Kotak Deskripsi Video (Expandable)
-                if (details?.description?.isNotEmpty() == true) {
+                if (successDetails?.description?.isNotEmpty() == true) {
                     var isExpanded by remember { mutableStateOf(false) }
                     Box(
                         modifier = Modifier
@@ -446,7 +519,7 @@ fun PlayerScreen(
                                 modifier = Modifier.padding(bottom = 4.dp)
                             )
                             Text(
-                                text = details.description,
+                                text = successDetails.description,
                                 color = TextMuted,
                                 fontSize = 12.sp,
                                 lineHeight = 17.sp,
@@ -477,7 +550,7 @@ fun PlayerScreen(
             }
 
             // Daftar Video Terkait
-            val relatedList = details?.relatedVideos ?: emptyList()
+            val relatedList = successDetails?.relatedVideos ?: emptyList()
             if (relatedList.isNotEmpty()) {
                 items(
                     items = relatedList,
