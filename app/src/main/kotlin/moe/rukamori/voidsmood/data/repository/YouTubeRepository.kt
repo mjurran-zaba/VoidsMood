@@ -204,18 +204,39 @@ object YouTubeRepository {
         }
     }
 
-    // BARU: Mengambil daftar video Shorts YouTube (#shorts viral / trending) untuk ShortsScreen
+    // DINONAKTIFKAN: getShortsFeed lama yang hanya mengambil 1 halaman awal dan terbatas 5-10 video
+    // suspend fun getShortsFeed(refresh: Boolean = false): Result<List<VideoItem>> = withContext(Dispatchers.IO) {
+    //     try {
+    //         initIfNeeded()
+    //         val query = if (refresh) "#shorts trending" else "#shorts viral indonesia"
+    //         val service = ServiceList.YouTube
+    //         val searchExtractor = service.getSearchExtractor(query)
+    //         searchExtractor.fetchPage()
+    //         val searchInfo = SearchInfo.getInfo(searchExtractor)
+    //         val shorts = searchInfo.relatedItems ...
+    //     } catch (e: Exception) { Result.failure(e) }
+    // }
+    // BARU: Mengambil daftar video Shorts YouTube (#shorts viral / trending) dengan multi-page fetching (20-30+ shorts)
     suspend fun getShortsFeed(refresh: Boolean = false): Result<List<VideoItem>> = withContext(Dispatchers.IO) {
         try {
             initIfNeeded()
-            val query = if (refresh) "#shorts trending" else "#shorts viral indonesia"
+            val query = if (refresh) "#shorts trending indonesia" else "#shorts viral indonesia"
             val service = ServiceList.YouTube
             val searchExtractor = service.getSearchExtractor(query)
             searchExtractor.fetchPage()
             val searchInfo = SearchInfo.getInfo(searchExtractor)
 
-            val shorts = searchInfo.relatedItems
-                .filterIsInstance<StreamInfoItem>()
+            val itemsList = mutableListOf<StreamInfoItem>()
+            itemsList.addAll(searchInfo.relatedItems.filterIsInstance<StreamInfoItem>())
+
+            if (searchExtractor.hasNextPage() && itemsList.size < 20) {
+                try {
+                    val nextPage = searchExtractor.getPage(searchInfo.nextPage)
+                    itemsList.addAll(nextPage.items.filterIsInstance<StreamInfoItem>())
+                } catch (_: Exception) {}
+            }
+
+            val shorts = itemsList
                 .map { item ->
                     val videoId = item.url.substringAfter("v=").substringBefore("&")
                     val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
@@ -242,18 +263,153 @@ object YouTubeRepository {
         }
     }
 
-    // BARU: Mengambil daftar video kategori Explore / Jelajah (Trending, Musik, Gaming, Berita, Animasi)
+    // DINONAKTIFKAN: getExploreVideos lama yang hanya memanggil searchVideos sederhana sehingga hanya menampilkan 5-7 thumbnails
+    // suspend fun getExploreVideos(category: String): Result<List<VideoItem>> = withContext(Dispatchers.IO) {
+    //     try {
+    //         initIfNeeded()
+    //         val query = when (category) {
+    //             "Musik" -> "Trending Musik Indonesia"
+    //             "Gaming" -> "Trending Game Indonesia"
+    //             "Berita" -> "Berita Hari Ini Indonesia"
+    //             "Animasi" -> "Animasi Populer Indonesia"
+    //             else -> "Trending Indonesia Hari Ini"
+    //         }
+    //         searchVideos(query)
+    //     } catch (e: Exception) {
+    //         Result.failure(e)
+    //     }
+    // }
+    // BARU: Mengambil daftar video kategori Explore / Jelajah lengkap (20-50 thumbnails) dengan Kiosk Trending resmi & multi-page fetch
     suspend fun getExploreVideos(category: String): Result<List<VideoItem>> = withContext(Dispatchers.IO) {
         try {
             initIfNeeded()
+            val service = ServiceList.YouTube
+
+            if (category == "Trending") {
+                // Ambil dari Kiosk Trending resmi YouTube NewPipe (memberikan 30-50 video trending teratas)
+                val kioskList = service.kioskList
+                val defaultKiosk = kioskList.defaultKioskId ?: "Trending"
+                val extractor = kioskList.getExtractorById(defaultKiosk, null)
+                extractor.fetchPage()
+                val kioskInfo = KioskInfo.getInfo(extractor)
+                val items = kioskInfo.relatedItems
+                    .filterIsInstance<StreamInfoItem>()
+                    .map { item ->
+                        val videoId = item.url.substringAfter("v=").substringBefore("&")
+                        val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+                        val avatar = item.uploaderAvatars.firstOrNull()?.url
+                        VideoItem(
+                            id = videoId,
+                            url = item.url,
+                            title = item.name ?: "Untitled",
+                            uploaderName = item.uploaderName ?: "Unknown Creator",
+                            uploaderAvatarUrl = avatar,
+                            thumbnailUrl = thumb,
+                            durationSeconds = item.duration,
+                            durationText = VideoItem.formatDuration(item.duration),
+                            viewCount = item.viewCount,
+                            viewCountText = VideoItem.formatViews(item.viewCount),
+                            uploadDateText = item.textualUploadDate ?: ""
+                        )
+                    }
+                    .distinctBy { it.id }
+
+                if (items.isNotEmpty()) {
+                    return@withContext Result.success(items)
+                }
+            }
+
+            // Untuk kategori Musik, Gaming, Berita, Animasi, atau fallback Trending
             val query = when (category) {
-                "Musik" -> "Trending Musik Indonesia"
-                "Gaming" -> "Trending Game Indonesia"
-                "Berita" -> "Berita Hari Ini Indonesia"
-                "Animasi" -> "Animasi Populer Indonesia"
+                "Musik" -> "Top Musik Indonesia Populer"
+                "Gaming" -> "Gaming Indonesia Populer"
+                "Berita" -> "Berita Terkini Indonesia"
+                "Animasi" -> "Animasi Indonesia Terpopuler"
                 else -> "Trending Indonesia Hari Ini"
             }
-            searchVideos(query)
+
+            val searchExtractor = service.getSearchExtractor(query)
+            searchExtractor.fetchPage()
+            val searchInfo = SearchInfo.getInfo(searchExtractor)
+
+            val streamItems = mutableListOf<StreamInfoItem>()
+            streamItems.addAll(searchInfo.relatedItems.filterIsInstance<StreamInfoItem>())
+
+            // Ambil halaman kedua untuk memastikan daftar terisi minimal 20-30 thumbnails
+            if (searchExtractor.hasNextPage() && streamItems.size < 20) {
+                try {
+                    val nextPage = searchExtractor.getPage(searchInfo.nextPage)
+                    streamItems.addAll(nextPage.items.filterIsInstance<StreamInfoItem>())
+                } catch (_: Exception) {}
+            }
+
+            val videos = streamItems
+                .map { item ->
+                    val videoId = item.url.substringAfter("v=").substringBefore("&")
+                    val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+                    val avatar = item.uploaderAvatars.firstOrNull()?.url
+                    VideoItem(
+                        id = videoId,
+                        url = item.url,
+                        title = item.name ?: "Untitled",
+                        uploaderName = item.uploaderName ?: "Unknown Creator",
+                        uploaderAvatarUrl = avatar,
+                        thumbnailUrl = thumb,
+                        durationSeconds = item.duration,
+                        durationText = VideoItem.formatDuration(item.duration),
+                        viewCount = item.viewCount,
+                        viewCountText = VideoItem.formatViews(item.viewCount),
+                        uploadDateText = item.textualUploadDate ?: ""
+                    )
+                }
+                .distinctBy { it.id }
+
+            Result.success(videos)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // BARU: Memuat batch video tambahan untuk kategori tertentu (Infinite Scroll)
+    suspend fun loadMoreExploreVideos(category: String, pageOffset: Int): Result<List<VideoItem>> = withContext(Dispatchers.IO) {
+        try {
+            initIfNeeded()
+            val queryList = when (category) {
+                "Musik" -> listOf("Top Musik Indonesia Hits", "Lagu Baru Populer Indonesia", "Musik Akustik Indonesia")
+                "Gaming" -> listOf("Gameplay Indonesia Populer", "Game Walkthrough Indonesia", "Streamer Game Indonesia")
+                "Berita" -> listOf("Kabar Berita Terkini", "Berita Nasional Indonesia Hari Ini", "Update Berita Terhangat")
+                "Animasi" -> listOf("Animasi Seru Populer", "Kartun Indonesia", "Short Animation Populer")
+                else -> listOf("Viral Indonesia Hari Ini", "Video Populer Indonesia", "Trending Topik Indonesia")
+            }
+            val targetQuery = queryList[pageOffset % queryList.size]
+            val service = ServiceList.YouTube
+            val searchExtractor = service.getSearchExtractor(targetQuery)
+            searchExtractor.fetchPage()
+            val searchInfo = SearchInfo.getInfo(searchExtractor)
+
+            val videos = searchInfo.relatedItems
+                .filterIsInstance<StreamInfoItem>()
+                .map { item ->
+                    val videoId = item.url.substringAfter("v=").substringBefore("&")
+                    val thumb = item.thumbnails.firstOrNull()?.url ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+                    val avatar = item.uploaderAvatars.firstOrNull()?.url
+                    VideoItem(
+                        id = videoId,
+                        url = item.url,
+                        title = item.name ?: "Untitled",
+                        uploaderName = item.uploaderName ?: "Unknown Creator",
+                        uploaderAvatarUrl = avatar,
+                        thumbnailUrl = thumb,
+                        durationSeconds = item.duration,
+                        durationText = VideoItem.formatDuration(item.duration),
+                        viewCount = item.viewCount,
+                        viewCountText = VideoItem.formatViews(item.viewCount),
+                        uploadDateText = item.textualUploadDate ?: ""
+                    )
+                }
+                .distinctBy { it.id }
+
+            Result.success(videos)
         } catch (e: Exception) {
             Result.failure(e)
         }

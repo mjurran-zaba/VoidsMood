@@ -3,6 +3,7 @@ package moe.rukamori.voidsmood
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -133,6 +134,12 @@ class MainActivity : ComponentActivity() {
 
                 // State kontrol kemunculan layer pencarian penuh dengan animasi slide-to-left
                 var isSearchActive by remember { mutableStateOf(false) }
+
+                // DINONAKTIFKAN: Belum ada penanganan tombol Back saat berada di luar tab HOME sehingga aplikasi langsung keluar
+                // BARU: Tangani tombol Back fisik/gesture di tab Shorts, Explore, atau Library agar kembali ke tab HOME terlebih dahulu
+                BackHandler(enabled = currentTab != NavigationTab.HOME && !isSearchActive && playerMode != PlayerMode.FULL) {
+                    currentTab = NavigationTab.HOME
+                }
 
                 if (playerMode == PlayerMode.FULL && activeVideo != null) {
                     // MODE 1: Layar Penuh Pemutar Video (PlayerScreen YouTube Style)

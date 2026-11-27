@@ -12,7 +12,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,7 +48,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -78,13 +76,15 @@ import moe.rukamori.voidsmood.ui.components.LucidePause
 import moe.rukamori.voidsmood.ui.components.LucidePlay
 import moe.rukamori.voidsmood.ui.components.LucideShare2
 import moe.rukamori.voidsmood.ui.components.LucideThumbsUp
+import moe.rukamori.voidsmood.ui.theme.DarkSurfaceVariant
 import moe.rukamori.voidsmood.ui.theme.IceWhite
 import moe.rukamori.voidsmood.ui.theme.PolarCyan
 import moe.rukamori.voidsmood.ui.theme.PureBlack
 import moe.rukamori.voidsmood.ui.theme.TextMuted
 
 // BARU: Layar Khusus Video Vertikal YouTube Shorts / Reels (Opsi Pilihan User)
-// Menampilkan pengalaman swipe vertikal layar penuh 9:16 dengan kontrol auto-play dan overlay interaktif
+// Menampilkan pengalaman swipe vertikal layar penuh 9:16 dengan Single Shared ExoPlayer & Non-blocking Clickable Gesture
+@OptIn(UnstableApi::class)
 @Composable
 fun ShortsScreen(
     onVideoSelect: (VideoItem) -> Unit,
@@ -95,7 +95,31 @@ fun ShortsScreen(
 
     var shortsList by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
+    var isLoadingMore by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    // BARU: Single Shared ExoPlayer instance di level ShortsScreen agar tidak terjadi decoder exhaustion dan saturasi bandwidth jaringan
+    val sharedExoPlayer = remember {
+        ExoPlayer.Builder(context).build().apply {
+            repeatMode = Player.REPEAT_MODE_ONE
+        }
+    }
+
+    val httpDataSourceFactory = remember {
+        DefaultHttpDataSource.Factory()
+            .setUserAgent(NewPipeDownloader.DEFAULT_USER_AGENT)
+            .setAllowCrossProtocolRedirects(true)
+            .setConnectTimeoutMs(15000)
+            .setReadTimeoutMs(20000)
+            .setDefaultRequestProperties(mapOf("Referer" to "https://www.youtube.com/"))
+    }
+
+    DisposableEffect(sharedExoPlayer) {
+        onDispose {
+            sharedExoPlayer.stop()
+            sharedExoPlayer.release()
+        }
+    }
 
     fun loadShorts(refresh: Boolean = false) {
         isLoading = true
@@ -174,6 +198,85 @@ fun ShortsScreen(
         } else if (shortsList.isNotEmpty()) {
             val pagerState = rememberPagerState(pageCount = { shortsList.size })
 
+            // BARU: Infinite Scroll - Muat lebih banyak shorts saat pengguna mendekati 4 item terakhir di pager
+            LaunchedEffect(pagerState.currentPage, shortsList.size) {
+                if (shortsList.isNotEmpty() && pagerState.currentPage >= shortsList.size - 4 && !isLoadingMore) {
+                    isLoadingMore = true
+                    val moreResult = YouTubeRepository.getShortsFeed(refresh = true)
+                    moreResult.onSuccess { newShorts ->
+                        if (newShorts.isNotEmpty()) {
+                            shortsList = (shortsList + newShorts).distinctBy { it.id }
+                        }
+                    }
+                    isLoadingMore = false
+                }
+            }
+
+            // BARU: Kontrol pemutaran pada video yang sedang aktif di pager
+            var isCurrentPlaying by remember { mutableStateOf(true) }
+            var isCurrentBuffering by remember { mutableStateOf(true) }
+
+            LaunchedEffect(pagerState.currentPage, shortsList) {
+                val currentVideo = shortsList.getOrNull(pagerState.currentPage) ?: return@LaunchedEffect
+                LocalLibraryRepository.addToHistory(currentVideo)
+                isCurrentBuffering = true
+                sharedExoPlayer.pause()
+                sharedExoPlayer.stop()
+                sharedExoPlayer.clearMediaItems()
+
+                val result = YouTubeRepository.getVideoPlaybackDetails(currentVideo.id)
+                result.onSuccess { details ->
+                    val mediaSource: MediaSource? = when {
+                        details.isProgressiveMuxed && !details.videoUrl.isNullOrBlank() -> {
+                            ProgressiveMediaSource.Factory(httpDataSourceFactory)
+                                .createMediaSource(MediaItem.fromUri(details.videoUrl))
+                        }
+                        !details.videoUrl.isNullOrBlank() && !details.audioUrl.isNullOrBlank() -> {
+                            val vSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
+                                .createMediaSource(MediaItem.fromUri(details.videoUrl))
+                            val aSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
+                                .createMediaSource(MediaItem.fromUri(details.audioUrl))
+                            MergingMediaSource(vSource, aSource)
+                        }
+                        !details.videoUrl.isNullOrBlank() -> {
+                            ProgressiveMediaSource.Factory(httpDataSourceFactory)
+                                .createMediaSource(MediaItem.fromUri(details.videoUrl))
+                        }
+                        !details.hlsUrl.isNullOrBlank() -> {
+                            HlsMediaSource.Factory(httpDataSourceFactory)
+                                .createMediaSource(MediaItem.fromUri(details.hlsUrl))
+                        }
+                        else -> null
+                    }
+                    if (mediaSource != null) {
+                        sharedExoPlayer.setMediaSource(mediaSource)
+                        sharedExoPlayer.prepare()
+                        sharedExoPlayer.play()
+                        isCurrentPlaying = true
+                    }
+                }
+            }
+
+            DisposableEffect(sharedExoPlayer) {
+                val listener = object : Player.Listener {
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        when (playbackState) {
+                            Player.STATE_BUFFERING -> isCurrentBuffering = true
+                            Player.STATE_READY -> isCurrentBuffering = false
+                            Player.STATE_ENDED -> isCurrentBuffering = false
+                            else -> {}
+                        }
+                    }
+                    override fun onIsPlayingChanged(playing: Boolean) {
+                        isCurrentPlaying = playing
+                    }
+                }
+                sharedExoPlayer.addListener(listener)
+                onDispose {
+                    sharedExoPlayer.removeListener(listener)
+                }
+            }
+
             VerticalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize()
@@ -184,6 +287,16 @@ fun ShortsScreen(
                 ShortsPlayerPage(
                     video = shortItem,
                     isActive = isCurrentPage,
+                    exoPlayer = sharedExoPlayer,
+                    isPlaying = isCurrentPlaying,
+                    isBuffering = isCurrentBuffering,
+                    onTogglePlayPause = {
+                        if (isCurrentPlaying) {
+                            sharedExoPlayer.pause()
+                        } else {
+                            sharedExoPlayer.play()
+                        }
+                    },
                     onVideoSelect = onVideoSelect
                 )
             }
@@ -215,119 +328,39 @@ fun ShortsScreen(
     }
 }
 
+// DINONAKTIFKAN: ShortsPlayerPage lama yang menginisialisasi ExoPlayer terpisah di setiap halaman pager dan memakai pointerInput detectTapGestures yang memblokir gestur scroll vertikal
+// @Composable
+// private fun ShortsPlayerPage(...) { ... val exoPlayer = remember { ExoPlayer.Builder(context).build() } ... pointerInput(Unit) { detectTapGestures(...) } }
+// BARU: ShortsPlayerPage yang menggunakan sharedExoPlayer dan non-blocking clickable gesture sehingga VerticalPager bebas di-swipe ke atas/bawah dengan mulus
 @OptIn(UnstableApi::class)
 @Composable
 private fun ShortsPlayerPage(
     video: VideoItem,
     isActive: Boolean,
+    exoPlayer: ExoPlayer,
+    isPlaying: Boolean,
+    isBuffering: Boolean,
+    onTogglePlayPause: () -> Unit,
     onVideoSelect: (VideoItem) -> Unit
 ) {
-    val context = LocalContext.current
-    var isPlaying by remember { mutableStateOf(true) }
     var showPlayPauseIndicator by remember { mutableStateOf(false) }
-    var isVideoBuffering by remember { mutableStateOf(true) }
     var isLiked by remember(video.id) { mutableStateOf(LocalLibraryRepository.isLiked(video.id)) }
-
-    val exoPlayer = remember {
-        ExoPlayer.Builder(context).build().apply {
-            repeatMode = Player.REPEAT_MODE_ONE
-        }
-    }
-
-    val httpDataSourceFactory = remember {
-        DefaultHttpDataSource.Factory()
-            .setUserAgent(NewPipeDownloader.DEFAULT_USER_AGENT)
-            .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(15000)
-            .setReadTimeoutMs(20000)
-            .setDefaultRequestProperties(mapOf("Referer" to "https://www.youtube.com/"))
-    }
-
-    // Ekstraksi dan pemutaran saat page aktif
-    LaunchedEffect(isActive) {
-        if (isActive) {
-            LocalLibraryRepository.addToHistory(video)
-            isVideoBuffering = true
-            val result = YouTubeRepository.getVideoPlaybackDetails(video.id)
-            result.onSuccess { details ->
-                val mediaSource = when {
-                    details.isProgressiveMuxed && !details.videoUrl.isNullOrBlank() -> {
-                        ProgressiveMediaSource.Factory(httpDataSourceFactory)
-                            .createMediaSource(MediaItem.fromUri(details.videoUrl))
-                    }
-                    !details.videoUrl.isNullOrBlank() && !details.audioUrl.isNullOrBlank() -> {
-                        val vSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
-                            .createMediaSource(MediaItem.fromUri(details.videoUrl))
-                        val aSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
-                            .createMediaSource(MediaItem.fromUri(details.audioUrl))
-                        MergingMediaSource(vSource, aSource)
-                    }
-                    !details.videoUrl.isNullOrBlank() -> {
-                        ProgressiveMediaSource.Factory(httpDataSourceFactory)
-                            .createMediaSource(MediaItem.fromUri(details.videoUrl))
-                    }
-                    !details.hlsUrl.isNullOrBlank() -> {
-                        HlsMediaSource.Factory(httpDataSourceFactory)
-                            .createMediaSource(MediaItem.fromUri(details.hlsUrl))
-                    }
-                    else -> null
-                }
-                if (mediaSource != null) {
-                    exoPlayer.setMediaSource(mediaSource)
-                    exoPlayer.prepare()
-                    exoPlayer.play()
-                    isPlaying = true
-                }
-            }
-        } else {
-            exoPlayer.pause()
-            exoPlayer.stop()
-            exoPlayer.clearMediaItems()
-        }
-    }
-
-    DisposableEffect(exoPlayer) {
-        val listener = object : Player.Listener {
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                when (playbackState) {
-                    Player.STATE_BUFFERING -> isVideoBuffering = true
-                    Player.STATE_READY -> isVideoBuffering = false
-                    Player.STATE_ENDED -> isVideoBuffering = false
-                    else -> {}
-                }
-            }
-            override fun onIsPlayingChanged(playing: Boolean) {
-                isPlaying = playing
-            }
-        }
-        exoPlayer.addListener(listener)
-        onDispose {
-            exoPlayer.removeListener(listener)
-            exoPlayer.release()
-        }
-    }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(PureBlack)
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onTap = {
-                        if (isPlaying) {
-                            exoPlayer.pause()
-                        } else {
-                            exoPlayer.play()
-                        }
-                        showPlayPauseIndicator = true
-                    },
-                    onDoubleTap = {
-                        isLiked = LocalLibraryRepository.toggleLike(video)
-                    }
-                )
-            }
+            // BARU: Gunakan clickable dengan indication null agar sentuhan tap dapat direspon TANPA menelan event drag vertikal VerticalPager
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = {
+                    onTogglePlayPause()
+                    showPlayPauseIndicator = true
+                }
+            )
     ) {
-        // Lapisan Video
+        // Lapisan Video: Hanya pasang PlayerView pada halaman yang sedang aktif di layar
         if (isActive) {
             AndroidView(
                 factory = { ctx ->
@@ -341,12 +374,15 @@ private fun ShortsPlayerPage(
                         )
                     }
                 },
+                update = { playerView ->
+                    playerView.player = exoPlayer
+                },
                 modifier = Modifier.fillMaxSize()
             )
         }
 
-        // Thumbnail Poster saat buffering
-        if (isVideoBuffering || !isActive) {
+        // Thumbnail Poster saat buffering atau pada halaman offscreen
+        if (isBuffering || !isActive) {
             AsyncImage(
                 model = video.thumbnailUrl,
                 contentDescription = video.title,
