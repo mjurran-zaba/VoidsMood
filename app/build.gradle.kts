@@ -123,5 +123,8 @@ dependencies {
     // Lifecycle & Coroutines
     implementation(libs.viewmodel.compose)
     implementation(libs.lifecycle.runtime.compose)
-    implementation(libs.coroutines)
+    // DINONAKTIFKAN: libs.coroutines adalah sub-accessor objek, bukan dependensi langsung
+    // implementation(libs.coroutines)
+    // BARU: Gunakan libs.coroutines.core untuk dependensi kotlinx-coroutines
+    implementation(libs.coroutines.core)
 }
