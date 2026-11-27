@@ -32,7 +32,10 @@ android {
     splits {
         abi {
             isEnable = true
-            isReset = true
+            // DINONAKTIFKAN: 'reset' adalah pemanggilan method reset(), bukan properti 'isReset'
+            // isReset = true
+            // BARU: Panggil fungsi reset() untuk membersihkan daftar ABI default sebelum include
+            reset()
             include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
             isUniversalApk = true
         }
