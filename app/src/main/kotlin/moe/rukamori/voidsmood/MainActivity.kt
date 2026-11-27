@@ -60,6 +60,7 @@ import moe.rukamori.voidsmood.ui.screens.ShortsScreen
 import moe.rukamori.voidsmood.ui.theme.PureBlack
 import moe.rukamori.voidsmood.ui.theme.TextMuted
 import moe.rukamori.voidsmood.ui.theme.VoidsMoodTheme
+import moe.rukamori.voidsmood.ui.viewmodel.HomeUiState
 import moe.rukamori.voidsmood.ui.viewmodel.HomeViewModel
 import moe.rukamori.voidsmood.ui.viewmodel.PlayerMode
 import moe.rukamori.voidsmood.ui.viewmodel.PlayerViewModel
